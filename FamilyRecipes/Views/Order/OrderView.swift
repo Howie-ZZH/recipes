@@ -4,6 +4,7 @@ struct OrderView: View {
     @Environment(AppState.self) private var appState
     
     @State private var selectedDish: Dish?
+    @State private var showingLuckyWheel = false
     
     // Filter orders to today only from AppState memory
     var todayOrders: [MealOrder] {
@@ -62,6 +63,60 @@ struct OrderView: View {
                     .shadow(color: Color.black.opacity(0.015), radius: 10, x: 0, y: 5)
                     .padding(.horizontal, 16)
                 }
+                
+                // 「今天吃什么」大转盘入口卡片 (精致白底卡片 + 渐变图标与右侧小气泡按钮)
+                Button {
+                    showingLuckyWheel = true
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(hex: "#FF5E36").opacity(0.1))
+                                .frame(width: 44, height: 44)
+                            Text("🎡")
+                                .font(.title3)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("今天吃什么？")
+                                .font(.system(.subheadline, design: .rounded))
+                                .fontWeight(.bold)
+                                .foregroundColor(Color(.label))
+                            
+                            Text("纠结点什么？转盘帮你做决定！")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(.secondaryLabel))
+                        }
+                        
+                        Spacer()
+                        
+                        // Action pill button
+                        HStack(spacing: 4) {
+                            Text("立即去转")
+                                .font(.system(size: 11, weight: .bold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(
+                                    colors: [Color(hex: "#FF8F50"), Color(hex: "#FF5E36")],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ))
+                        )
+                        .shadow(color: Color(hex: "#FF5E36").opacity(0.25), radius: 4, x: 0, y: 2)
+                    }
+                    .padding(14)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(20)
+                    .shadow(color: Color.black.opacity(0.015), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(ScaledButtonStyle())
+                .padding(.horizontal, 16)
                 
                 // 1. Today's Order Panel (家庭今日已点)
                 VStack(alignment: .leading, spacing: 14) {
@@ -210,31 +265,40 @@ struct OrderView: View {
                 }
                 
                 // 3. Fast Cook Access Banner
+                // 3. Fast Cook Access Callout (精致的iOS提示性卡片，使用轻量橙色背景加左侧高亮竖条线)
                 if appState.currentMember?.role == "Cook" {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("👩‍🍳 您是今日掌勺人")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                Text("点击下方“掌勺面板”可汇总订单并查看买菜清单。")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.9))
-                            }
-                            Spacer()
+                    HStack(spacing: 12) {
+                        // Left vertical accent bar
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(hex: "#FF5E36"))
+                            .frame(width: 4)
+                            .padding(.vertical, 4)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("👩‍🍳 您是今日掌勺人")
+                                .font(.system(.subheadline, design: .rounded))
+                                .fontWeight(.bold)
+                                .foregroundColor(Color(hex: "#FF5E36"))
+                            
+                            Text("大家点完餐后，点击下方“掌勺面板”可汇总订单并查看买菜清单。")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(.secondaryLabel))
+                                .lineLimit(2)
                         }
-                        .padding(16)
-                        .background(
-                            LinearGradient(
-                                colors: [Color(hex: "#FF5E36"), Color(hex: "#FF8F50")],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .cornerRadius(18)
-                        .padding(.horizontal, 16)
+                        
+                        Spacer()
                     }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(hex: "#FF5E36").opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color(hex: "#FF5E36").opacity(0.12), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
                 }
             }
             .padding(.vertical, 20)
@@ -242,6 +306,10 @@ struct OrderView: View {
         .background(Color(.systemGroupedBackground))
         .sheet(item: $selectedDish) { dish in
             DishDetailView(dish: dish)
+                .environment(appState)
+        }
+        .sheet(isPresented: $showingLuckyWheel) {
+            LuckyWheelView()
                 .environment(appState)
         }
         .refreshable {

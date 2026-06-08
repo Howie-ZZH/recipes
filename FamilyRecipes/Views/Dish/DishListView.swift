@@ -348,6 +348,7 @@ struct AddDishSheet: View {
                             .disabled(name.isEmpty || isGeneratingAIImage)
                         }
                     }
+                    .buttonStyle(.plain)
                     .padding(.vertical, 4)
                     
                     if !aiError.isEmpty {
@@ -443,9 +444,18 @@ struct AddDishSheet: View {
                         )
                         isSaving = true
                         Task {
-                            await appState.addDish(newDish)
-                            isSaving = false
-                            dismiss()
+                            do {
+                                try await appState.addDish(newDish)
+                                await MainActor.run {
+                                    isSaving = false
+                                    dismiss()
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    isSaving = false
+                                    self.aiError = "无法添加菜品：\(error.localizedDescription)"
+                                }
+                            }
                         }
                     } label: {
                         if isSaving {
@@ -480,8 +490,9 @@ struct AddDishSheet: View {
                     }
                 }
             } catch {
+                print("AI Image Generation Error: \(error)")
                 await MainActor.run {
-                    self.aiError = "AI 生图失败，请稍后重试。"
+                    self.aiError = "AI 生图失败，请稍后重试。原因: \(error.localizedDescription)"
                     self.isGeneratingAIImage = false
                 }
             }

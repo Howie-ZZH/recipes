@@ -47,6 +47,18 @@ struct CloudSettingsView: View {
         is_fulfilled BOOLEAN NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- 4. 创建美食日记表
+    CREATE TABLE IF NOT EXISTS food_diaries (
+        id UUID PRIMARY KEY,
+        diary_date DATE NOT NULL,
+        member_id UUID REFERENCES family_members(id) ON DELETE CASCADE,
+        dish_id UUID REFERENCES dishes(id) ON DELETE CASCADE,
+        rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment TEXT NOT NULL,
+        image_base64 TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
     """
     
     var body: some View {

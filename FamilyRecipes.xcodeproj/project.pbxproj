@@ -9,7 +9,9 @@
 /* Begin PBXBuildFile section */
 		0F8CE1240F7F8E7122F6195C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5F1DBB7EF97CC84AF3FBA754 /* Assets.xcassets */; };
 		14EFF4741795E2376B68CA95 /* MemberManageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B320C0FEF9B221BE42D94000 /* MemberManageView.swift */; };
+		1A2D036172D02DC3DA42A81B /* FoodCalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDA3F8C2D4BA27F678478D0 /* FoodCalendarView.swift */; };
 		1B60A9650E818765AC0E1F2D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CB8ABC7AC573874B2369DC /* ContentView.swift */; };
+		287199DC02C4955E5C9E38DE /* LuckyWheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5C86C8C5ECFA89A73E7A6E /* LuckyWheelView.swift */; };
 		295C6A9B59070D6708F358F4 /* FamilyRecipesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C127CC6D2CEB77DF55B81CE /* FamilyRecipesApp.swift */; };
 		49F6E965C1373E7ED406CBB3 /* AIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE13E3DBE3590FC8C9EE079C /* AIEngine.swift */; };
 		82A2CB474B36DA5194C29E81 /* DishDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF0236EE9B23F347AF02DBE /* DishDetailView.swift */; };
@@ -22,6 +24,7 @@
 		C82984195F21C76705F1E6F3 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA8EC764B364149FDA4CE1A /* AppState.swift */; };
 		D338C4FC36A6CF869C71BEFC /* FullScreenImageViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A45860F5823D9658A5487679 /* FullScreenImageViewer.swift */; };
 		E23F5ECC5361B4825E0DCCAF /* SupabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0A41909B36C1A65E57FEAE /* SupabaseManager.swift */; };
+		F5434C5A8E7139182FA6625F /* DeviceShakeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C00E28942D8714D45EE40FE /* DeviceShakeModifier.swift */; };
 		FD7957394E25B6E6A6A224BC /* CloudSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 278828CB61E66DCE72F31D84 /* CloudSettingsView.swift */; };
 		FE2AD5DBD8B035D3D8376B15 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5F22BDF0EF7089CFBEE109D /* MainTabView.swift */; };
 /* End PBXBuildFile section */
@@ -32,6 +35,7 @@
 		0E3E3AB6900E61A756A80319 /* CookDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookDashboardView.swift; sourceTree = "<group>"; };
 		26D967BF795711731CD005D1 /* OrderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderView.swift; sourceTree = "<group>"; };
 		278828CB61E66DCE72F31D84 /* CloudSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSettingsView.swift; sourceTree = "<group>"; };
+		2C00E28942D8714D45EE40FE /* DeviceShakeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceShakeModifier.swift; sourceTree = "<group>"; };
 		30F86194D76DBE2BF6F94434 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		3C127CC6D2CEB77DF55B81CE /* FamilyRecipesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyRecipesApp.swift; sourceTree = "<group>"; };
 		4C0A41909B36C1A65E57FEAE /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
@@ -40,8 +44,10 @@
 		83B890ADCD8C69F9FF9330EB /* ProfileSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSelectionView.swift; sourceTree = "<group>"; };
 		A45860F5823D9658A5487679 /* FullScreenImageViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageViewer.swift; sourceTree = "<group>"; };
 		A8EEB3209B4AF7F5198EBAD0 /* FamilyRecipes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FamilyRecipes.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACDA3F8C2D4BA27F678478D0 /* FoodCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodCalendarView.swift; sourceTree = "<group>"; };
 		AE13E3DBE3590FC8C9EE079C /* AIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngine.swift; sourceTree = "<group>"; };
 		B320C0FEF9B221BE42D94000 /* MemberManageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemberManageView.swift; sourceTree = "<group>"; };
+		BB5C86C8C5ECFA89A73E7A6E /* LuckyWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuckyWheelView.swift; sourceTree = "<group>"; };
 		C5F22BDF0EF7089CFBEE109D /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		D0CB8ABC7AC573874B2369DC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D6EACDED47F4E9AA9B202C21 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
@@ -108,9 +114,12 @@
 		ADD64C86B5C44C9F68EF96D0 /* Dish */ = {
 			isa = PBXGroup;
 			children = (
+				2C00E28942D8714D45EE40FE /* DeviceShakeModifier.swift */,
 				0CF0236EE9B23F347AF02DBE /* DishDetailView.swift */,
 				78061DEB142E425E4FC85904 /* DishListView.swift */,
+				ACDA3F8C2D4BA27F678478D0 /* FoodCalendarView.swift */,
 				A45860F5823D9658A5487679 /* FullScreenImageViewer.swift */,
+				BB5C86C8C5ECFA89A73E7A6E /* LuckyWheelView.swift */,
 			);
 			path = Dish;
 			sourceTree = "<group>";
@@ -208,10 +217,13 @@
 				FD7957394E25B6E6A6A224BC /* CloudSettingsView.swift in Sources */,
 				1B60A9650E818765AC0E1F2D /* ContentView.swift in Sources */,
 				BC3665AF0F73119C184CC185 /* CookDashboardView.swift in Sources */,
+				F5434C5A8E7139182FA6625F /* DeviceShakeModifier.swift in Sources */,
 				82A2CB474B36DA5194C29E81 /* DishDetailView.swift in Sources */,
 				BAE6BB2A40DADF6337BF0E18 /* DishListView.swift in Sources */,
 				295C6A9B59070D6708F358F4 /* FamilyRecipesApp.swift in Sources */,
+				1A2D036172D02DC3DA42A81B /* FoodCalendarView.swift in Sources */,
 				D338C4FC36A6CF869C71BEFC /* FullScreenImageViewer.swift in Sources */,
+				287199DC02C4955E5C9E38DE /* LuckyWheelView.swift in Sources */,
 				FE2AD5DBD8B035D3D8376B15 /* MainTabView.swift in Sources */,
 				14EFF4741795E2376B68CA95 /* MemberManageView.swift in Sources */,
 				A71810ABEC588B0C329B9B7E /* Models.swift in Sources */,

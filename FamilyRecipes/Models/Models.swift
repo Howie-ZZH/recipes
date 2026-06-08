@@ -190,3 +190,85 @@ final class MealOrder: Codable, Identifiable, Hashable {
         hasher.combine(id)
     }
 }
+
+@Observable
+final class FoodDiary: Codable, Identifiable, Hashable {
+    var id: UUID
+    var diaryDate: Date
+    var rating: Int
+    var comment: String
+    var memberId: UUID
+    var dishId: UUID
+    var imageBase64: String?
+    
+    // In-memory resolved references for UI
+    var member: FamilyMember?
+    var dish: Dish?
+    
+    var imageData: Data? {
+        if let base64 = imageBase64 {
+            return Data(base64Encoded: base64)
+        }
+        return nil
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case diaryDate = "diary_date"
+        case rating
+        case comment
+        case memberId = "member_id"
+        case dishId = "dish_id"
+        case imageBase64 = "image_base64"
+    }
+    
+    init(id: UUID = UUID(), diaryDate: Date = Date(), rating: Int, comment: String = "", memberId: UUID, dishId: UUID, imageBase64: String? = nil) {
+        self.id = id
+        self.diaryDate = diaryDate
+        self.rating = rating
+        self.comment = comment
+        self.memberId = memberId
+        self.dishId = dishId
+        self.imageBase64 = imageBase64
+    }
+    
+    required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        
+        let dateString = try container.decode(String.self, forKey: .diaryDate)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        diaryDate = formatter.date(from: dateString) ?? Date()
+        
+        rating = try container.decode(Int.self, forKey: .rating)
+        comment = try container.decode(String.self, forKey: .comment)
+        memberId = try container.decode(UUID.self, forKey: .memberId)
+        dishId = try container.decode(UUID.self, forKey: .dishId)
+        imageBase64 = try container.decodeIfPresent(String.self, forKey: .imageBase64)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: diaryDate)
+        try container.encode(dateString, forKey: .diaryDate)
+        
+        try container.encode(rating, forKey: .rating)
+        try container.encode(comment, forKey: .comment)
+        try container.encode(memberId, forKey: .memberId)
+        try container.encode(dishId, forKey: .dishId)
+        try container.encodeIfPresent(imageBase64, forKey: .imageBase64)
+    }
+    
+    static func == (lhs: FoodDiary, rhs: FoodDiary) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}

@@ -15,6 +15,7 @@ final class AppState {
     var members: [FamilyMember] = []
     var dishes: [Dish] = []
     var orders: [MealOrder] = []
+    var diaries: [FoodDiary] = []
     
     // UI Feedback States
     var isLoading: Bool = false
@@ -79,11 +80,13 @@ final class AppState {
             async let fetchedMembers = SupabaseManager.shared.fetchMembers(url: supabaseURL, key: supabaseKey)
             async let fetchedDishes = SupabaseManager.shared.fetchDishes(url: supabaseURL, key: supabaseKey)
             async let fetchedOrders = SupabaseManager.shared.fetchOrders(url: supabaseURL, key: supabaseKey)
+            async let fetchedDiaries = SupabaseManager.shared.fetchDiaries(url: supabaseURL, key: supabaseKey)
             
             // Resolve parallel fetches
             let resolvedMembers = try await fetchedMembers
             let resolvedDishes = try await fetchedDishes
             let resolvedOrders = try await fetchedOrders
+            let resolvedDiaries = try await fetchedDiaries
             
             // Update in-memory arrays on MainActor
             self.members = resolvedMembers.sorted(by: { $0.name < $1.name })
@@ -104,8 +107,20 @@ final class AppState {
                 
                 tempOrders.append(order)
             }
-            
             self.orders = tempOrders
+            
+            // Resolve object graphs for FoodDiaries
+            var tempDiaries: [FoodDiary] = []
+            for diary in resolvedDiaries {
+                if let matchedMember = self.members.first(where: { $0.id == diary.memberId }) {
+                    diary.member = matchedMember
+                }
+                if let matchedDish = self.dishes.first(where: { $0.id == diary.dishId }) {
+                    diary.dish = matchedDish
+                }
+                tempDiaries.append(diary)
+            }
+            self.diaries = tempDiaries.sorted(by: { $0.diaryDate > $1.diaryDate })
             
             // Reload active profile context if needed
             loadActiveMember()
@@ -212,6 +227,19 @@ final class AppState {
         }
     }
     
+    func revertOrder(_ order: MealOrder) async {
+        order.isFulfilled = false
+        do {
+            try await SupabaseManager.shared.upsertOrder(order, url: supabaseURL, key: supabaseKey)
+            if let index = self.orders.firstIndex(where: { $0.id == order.id }) {
+                self.orders[index] = order
+            }
+        } catch {
+            order.isFulfilled = true // Rollback
+            self.networkError = "无法撤回完成状态：\(error.localizedDescription)"
+        }
+    }
+    
     func deleteOrder(id: UUID) async {
         do {
             try await SupabaseManager.shared.deleteOrder(id: id, url: supabaseURL, key: supabaseKey)
@@ -219,5 +247,29 @@ final class AppState {
         } catch {
             self.networkError = "无法删除点餐记录：\(error.localizedDescription)"
         }
+    }
+    
+    // MARK: - Food Diary Mutation Operations
+    
+    func addDiary(_ diary: FoodDiary) async throws {
+        try await SupabaseManager.shared.upsertDiary(diary, url: supabaseURL, key: supabaseKey)
+        
+        // Resolve references locally
+        diary.member = self.members.first(where: { $0.id == diary.memberId })
+        diary.dish = self.dishes.first(where: { $0.id == diary.dishId })
+        
+        if let index = self.diaries.firstIndex(where: { $0.id == diary.id }) {
+            self.diaries[index] = diary
+        } else {
+            self.diaries.append(diary)
+        }
+        
+        // Sort diaries by date descending
+        self.diaries.sort(by: { $0.diaryDate > $1.diaryDate })
+    }
+    
+    func deleteDiary(id: UUID) async throws {
+        try await SupabaseManager.shared.deleteDiary(id: id, url: supabaseURL, key: supabaseKey)
+        self.diaries.removeAll(where: { $0.id == id })
     }
 }

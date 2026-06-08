@@ -6,18 +6,41 @@ struct CookDashboardView: View {
     @State private var dashboardMode = 0 // 0: 今日菜品, 1: 智能买菜清单
     @State private var checkedIngredients: Set<String> = []
     
+    // All today's orders
+    var todayOrders: [MealOrder] {
+        let calendar = Calendar.current
+        return appState.orders.filter { calendar.isDateInToday($0.orderDate) }
+    }
+    
     // Active today orders from AppState memory
     var activeOrders: [MealOrder] {
-        let calendar = Calendar.current
-        return appState.orders.filter { order in
-            calendar.isDateInToday(order.orderDate) && !order.isFulfilled
-        }
+        todayOrders.filter { !$0.isFulfilled }
+    }
+    
+    // Completed today orders from AppState memory
+    var completedOrders: [MealOrder] {
+        todayOrders.filter { $0.isFulfilled }
     }
     
     // Group active orders by dish
-    var groupedOrders: [DishGroupedOrder] {
+    var groupedActiveOrders: [DishGroupedOrder] {
         var groups: [UUID: DishGroupedOrder] = [:]
         for order in activeOrders {
+            guard let dish = order.dish else { continue }
+            if var group = groups[dish.id] {
+                group.orders.append(order)
+                groups[dish.id] = group
+            } else {
+                groups[dish.id] = DishGroupedOrder(dish: dish, orders: [order])
+            }
+        }
+        return Array(groups.values).sorted { $0.orders.count > $1.orders.count }
+    }
+    
+    // Group completed orders by dish
+    var groupedCompletedOrders: [DishGroupedOrder] {
+        var groups: [UUID: DishGroupedOrder] = [:]
+        for order in completedOrders {
             guard let dish = order.dish else { continue }
             if var group = groups[dish.id] {
                 group.orders.append(order)
@@ -63,12 +86,12 @@ struct CookDashboardView: View {
             
             if dashboardMode == 0 {
                 // TODAY'S DISH PREPARATION WORKSPACE
-                if groupedOrders.isEmpty {
+                if groupedActiveOrders.isEmpty && groupedCompletedOrders.isEmpty {
                     VStack(spacing: 24) {
                         Spacer()
                         Text("🧑‍🍳")
                             .font(.system(size: 64))
-                        Text("今天还没有人点餐，或者点餐已全部做好啦！")
+                        Text("今天还没有人点餐哦！")
                             .font(.subheadline)
                             .foregroundColor(Color(.secondaryLabel))
                             .multilineTextAlignment(.center)
@@ -77,84 +100,189 @@ struct CookDashboardView: View {
                     }
                 } else {
                     List {
-                        ForEach(groupedOrders) { group in
-                            VStack(alignment: .leading, spacing: 14) {
-                                HStack {
-                                    Text(group.dish.emoji)
-                                        .font(.title2)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(group.dish.name)
-                                            .font(.headline)
-                                        Text(group.dish.category)
-                                            .font(.caption2)
-                                            .foregroundColor(Color(hex: "#FF5E36"))
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 1)
-                                            .background(Capsule().fill(Color(hex: "#FF5E36").opacity(0.12)))
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Complete group button
-                                    Button {
-                                        completeDish(group: group)
-                                    } label: {
-                                        Text("已做好")
-                                            .font(.caption)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 6)
-                                            .background(Color.green)
-                                            .cornerRadius(12)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                
-                                Divider()
-                                
-                                // Detail requests per person
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(group.orders) { order in
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text(order.member?.emoji ?? "👤")
-                                                .font(.subheadline)
-                                                .frame(width: 24, height: 24)
-                                                .background(Circle().fill(Color.orange.opacity(0.15)))
+                        // 1. Pending Section
+                        if !groupedActiveOrders.isEmpty {
+                            Section(header: Text("🍳 待制作菜品 (\(activeOrders.count))")
+                                .font(.system(.footnote, design: .rounded))
+                                .fontWeight(.bold)
+                                .foregroundColor(Color(hex: "#FF5E36"))
+                                .padding(.top, 10)
+                                .padding(.bottom, 4)
+                            ) {
+                                ForEach(groupedActiveOrders) { group in
+                                    VStack(alignment: .leading, spacing: 14) {
+                                        HStack {
+                                            Text(group.dish.emoji)
+                                                .font(.title2)
                                             
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(order.member?.name ?? "未知成员")
-                                                    .font(.system(.subheadline, design: .rounded))
-                                                    .fontWeight(.semibold)
-                                                
-                                                if !order.note.isEmpty {
-                                                    Text("💬 \"\(order.note)\"")
-                                                        .font(.system(.caption, design: .rounded))
-                                                        .foregroundColor(Color(hex: "#FF5E36"))
-                                                        .italic()
-                                                }
+                                                Text(group.dish.name)
+                                                    .font(.headline)
+                                                Text(group.dish.category)
+                                                    .font(.caption2)
+                                                    .foregroundColor(Color(hex: "#FF5E36"))
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 1)
+                                                    .background(Capsule().fill(Color(hex: "#FF5E36").opacity(0.12)))
                                             }
+                                            
                                             Spacer()
                                             
+                                            // Complete group button
                                             Button {
-                                                completeSingleOrder(order: order)
+                                                completeDish(group: group)
                                             } label: {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(Color(.systemGray4))
-                                                    .font(.title3)
+                                                Text("制作完成")
+                                                    .font(.caption)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 6)
+                                                    .background(Color.green)
+                                                    .cornerRadius(12)
                                             }
                                             .buttonStyle(.plain)
                                         }
+                                        
+                                        Divider()
+                                        
+                                        // Detail requests per person
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            ForEach(group.orders) { order in
+                                                HStack(alignment: .top, spacing: 8) {
+                                                    Text(order.member?.emoji ?? "👤")
+                                                        .font(.subheadline)
+                                                        .frame(width: 24, height: 24)
+                                                        .background(Circle().fill(Color.orange.opacity(0.15)))
+                                                    
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text(order.member?.name ?? "未知成员")
+                                                            .font(.system(.subheadline, design: .rounded))
+                                                            .fontWeight(.semibold)
+                                                        
+                                                        if !order.note.isEmpty {
+                                                            Text("💬 \"\(order.note)\"")
+                                                                .font(.system(.caption, design: .rounded))
+                                                                .foregroundColor(Color(hex: "#FF5E36"))
+                                                                .italic()
+                                                        }
+                                                    }
+                                                    Spacer()
+                                                    
+                                                    Button {
+                                                        completeSingleOrder(order: order)
+                                                    } label: {
+                                                        Image(systemName: "circle")
+                                                            .foregroundColor(Color(hex: "#FF5E36"))
+                                                            .font(.title3)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
                                     }
+                                    .padding(16)
+                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .cornerRadius(20)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .padding(.vertical, 4)
                                 }
                             }
-                            .padding(16)
-                            .background(Color(.secondarySystemGroupedBackground))
-                            .cornerRadius(20)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .padding(.vertical, 4)
+                        }
+                        
+                        // 2. Completed Section
+                        if !groupedCompletedOrders.isEmpty {
+                            Section(header: Text("✅ 今日已制作 (\(completedOrders.count))")
+                                .font(.system(.footnote, design: .rounded))
+                                .fontWeight(.bold)
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.top, 14)
+                                .padding(.bottom, 4)
+                            ) {
+                                ForEach(groupedCompletedOrders) { group in
+                                    VStack(alignment: .leading, spacing: 14) {
+                                        HStack {
+                                            Text(group.dish.emoji)
+                                                .font(.title2)
+                                                .opacity(0.6)
+                                            
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(group.dish.name)
+                                                    .font(.headline)
+                                                    .strikethrough()
+                                                    .foregroundColor(Color(.secondaryLabel))
+                                                Text(group.dish.category)
+                                                    .font(.caption2)
+                                                    .foregroundColor(Color(.secondaryLabel))
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 1)
+                                                    .background(Capsule().fill(Color(.systemGray5)))
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            // Revert group button
+                                            Button {
+                                                revertDish(group: group)
+                                            } label: {
+                                                Text("撤回")
+                                                    .font(.caption)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(Color(hex: "#FF5E36"))
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 6)
+                                                    .background(Capsule().stroke(Color(hex: "#FF5E36"), lineWidth: 1.5))
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        
+                                        Divider()
+                                        
+                                        // Detail requests per person
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            ForEach(group.orders) { order in
+                                                HStack(alignment: .top, spacing: 8) {
+                                                    Text(order.member?.emoji ?? "👤")
+                                                        .font(.subheadline)
+                                                        .frame(width: 24, height: 24)
+                                                        .background(Circle().fill(Color(.systemGray6)))
+                                                    
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text(order.member?.name ?? "未知成员")
+                                                            .font(.system(.subheadline, design: .rounded))
+                                                            .fontWeight(.semibold)
+                                                            .foregroundColor(Color(.secondaryLabel))
+                                                        
+                                                        if !order.note.isEmpty {
+                                                            Text("💬 \"\(order.note)\"")
+                                                                .font(.system(.caption, design: .rounded))
+                                                                .foregroundColor(Color(.tertiaryLabel))
+                                                                .italic()
+                                                        }
+                                                    }
+                                                    Spacer()
+                                                    
+                                                    Button {
+                                                        revertSingleOrder(order: order)
+                                                    } label: {
+                                                        Image(systemName: "checkmark.circle.fill")
+                                                            .foregroundColor(.green)
+                                                            .font(.title3)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(16)
+                                    .background(Color(.secondarySystemGroupedBackground).opacity(0.85))
+                                    .cornerRadius(20)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .padding(.vertical, 4)
+                                }
+                            }
                         }
                     }
                     .listStyle(.plain)
@@ -252,6 +380,26 @@ struct CookDashboardView: View {
         withAnimation(.easeInOut(duration: 0.25)) {
             Task {
                 await appState.fulfillOrder(order)
+            }
+        }
+    }
+    
+    // Revert entire dish group
+    private func revertDish(group: DishGroupedOrder) {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            for order in group.orders {
+                Task {
+                    await appState.revertOrder(order)
+                }
+            }
+        }
+    }
+    
+    // Revert single person's dish request
+    private func revertSingleOrder(order: MealOrder) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            Task {
+                await appState.revertOrder(order)
             }
         }
     }

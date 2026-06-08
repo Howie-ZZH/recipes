@@ -55,7 +55,9 @@ final class SupabaseManager {
             request.httpBody = body
         }
         
-        if method == "POST" || method == "PATCH" {
+        if method == "POST" {
+            request.setValue("resolution=merge-duplicates,return=representation", forHTTPHeaderField: "Prefer")
+        } else if method == "PATCH" {
             request.setValue("return=representation", forHTTPHeaderField: "Prefer")
         }
         
@@ -132,5 +134,23 @@ final class SupabaseManager {
     
     func deleteOrder(id: UUID, url: String, key: String) async throws {
         _ = try await performRequest(urlPath: "meal_orders?id=eq.\(id.uuidString.lowercased())", method: "DELETE", supabaseURL: url, supabaseKey: key)
+    }
+    
+    // MARK: - Food Diary Sync API
+    
+    func fetchDiaries(url: String, key: String) async throws -> [FoodDiary] {
+        let data = try await performRequest(urlPath: "food_diaries?select=*", method: "GET", supabaseURL: url, supabaseKey: key)
+        let decoder = JSONDecoder()
+        return try decoder.decode([FoodDiary].self, from: data)
+    }
+    
+    func upsertDiary(_ diary: FoodDiary, url: String, key: String) async throws {
+        let encoder = JSONEncoder()
+        let body = try encoder.encode(diary)
+        _ = try await performRequest(urlPath: "food_diaries", method: "POST", body: body, supabaseURL: url, supabaseKey: key)
+    }
+    
+    func deleteDiary(id: UUID, url: String, key: String) async throws {
+        _ = try await performRequest(urlPath: "food_diaries?id=eq.\(id.uuidString.lowercased())", method: "DELETE", supabaseURL: url, supabaseKey: key)
     }
 }

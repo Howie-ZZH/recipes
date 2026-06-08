@@ -26,6 +26,12 @@ struct MainTabView: View {
                         Label("掌勺面板", systemImage: "cooktop.fill")
                     }
                     .tag(2)
+                
+                FoodCalendarView()
+                    .tabItem {
+                        Label("美食日历", systemImage: "calendar")
+                    }
+                    .tag(3)
             }
             .tint(Color(hex: "#FF5E36")) // Warm accent color for active tabs
             .navigationBarTitleDisplayMode(.inline)
