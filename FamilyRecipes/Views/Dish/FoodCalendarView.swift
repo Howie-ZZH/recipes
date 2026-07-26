@@ -1,8 +1,13 @@
 import SwiftUI
+import SwiftData
 import PhotosUI
 
 struct FoodCalendarView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    
+    @Query private var diaries: [FoodDiary]
+    @Query private var orders: [MealOrder]
     
     @State private var currentMonthDate = Date() // Selected month/year
     @State private var selectedDate = Date()     // Selected day
@@ -21,14 +26,14 @@ struct FoodCalendarView: View {
     
     // Diaries filtered for the selected day
     var selectedDayDiaries: [FoodDiary] {
-        appState.diaries.filter { diary in
+        diaries.filter { diary in
             calendar.isDate(diary.diaryDate, inSameDayAs: selectedDate)
         }
     }
     
     // Completed orders on selected date
     var selectedDayCompletedOrders: [MealOrder] {
-        appState.orders.filter { order in
+        orders.filter { order in
             calendar.isDate(order.orderDate, inSameDayAs: selectedDate) && order.isFulfilled
         }
     }
@@ -36,10 +41,10 @@ struct FoodCalendarView: View {
     // Completed orders that don't have a diary entry yet on the selected day
     var pendingDiaryOrders: [MealOrder] {
         selectedDayCompletedOrders.filter { order in
-            !appState.diaries.contains { diary in
+            !diaries.contains { diary in
                 calendar.isDate(diary.diaryDate, inSameDayAs: selectedDate) &&
-                diary.dishId == order.dishId &&
-                diary.memberId == order.memberId
+                diary.dish?.id == order.dish?.id &&
+                diary.member?.id == order.member?.id
             }
         }
     }
@@ -48,14 +53,14 @@ struct FoodCalendarView: View {
     private func uniqueDishEmojis(for date: Date) -> [String] {
         var emojis: [String] = []
         
-        let dayDiaries = appState.diaries.filter { calendar.isDate($0.diaryDate, inSameDayAs: date) }
+        let dayDiaries = diaries.filter { calendar.isDate($0.diaryDate, inSameDayAs: date) }
         for diary in dayDiaries {
             if let emoji = diary.dish?.emoji, !emojis.contains(emoji) {
                 emojis.append(emoji)
             }
         }
         
-        let dayOrders = appState.orders.filter { order in
+        let dayOrders = orders.filter { order in
             calendar.isDate(order.orderDate, inSameDayAs: date) && order.isFulfilled
         }
         for order in dayOrders {
@@ -141,24 +146,36 @@ struct FoodCalendarView: View {
                                                 .fontWeight(isSelected ? .black : (isToday ? .bold : .medium))
                                                 .foregroundColor(isSelected ? .white : (isToday ? Color(hex: "#FF5E36") : Color(.label)))
                                             
-                                            // Badges row: Emojis of dishes eaten
-                                            HStack(spacing: 1) {
-                                                if !dayEmojis.isEmpty {
-                                                    ForEach(dayEmojis.prefix(2), id: \.self) { emoji in
-                                                        Text(emoji)
-                                                            .font(.system(size: 10))
-                                                    }
-                                                } else {
-                                                    Spacer()
-                                                        .frame(height: 12)
+                                            // Badges row: Emojis of dishes eaten (fixed frame height)
+                                            HStack(spacing: 2) {
+                                                ForEach(dayEmojis.prefix(2), id: \.self) { emoji in
+                                                    Text(emoji)
+                                                        .font(.system(size: 10))
                                                 }
                                             }
+                                            .frame(height: 14)
+                                            .frame(maxWidth: .infinity, alignment: .center)
                                         }
                                         .frame(height: 48)
                                         .frame(maxWidth: .infinity)
                                         .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(isSelected ? Color(hex: "#FF5E36") : (isToday ? Color(hex: "#FF5E36").opacity(0.12) : Color.clear))
+                                            ZStack {
+                                                if isSelected {
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .fill(Color(hex: "#FF5E36"))
+                                                        .shadow(color: Color(hex: "#FF5E36").opacity(0.3), radius: 4, x: 0, y: 2)
+                                                } else if isToday {
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .fill(Color(hex: "#FF5E36").opacity(0.08))
+                                                        .overlay(
+                                                            RoundedRectangle(cornerRadius: 12)
+                                                                .stroke(Color(hex: "#FF5E36"), lineWidth: 1.5)
+                                                        )
+                                                } else {
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .fill(Color.clear)
+                                                }
+                                            }
                                         )
                                     }
                                     .buttonStyle(.plain)
@@ -345,19 +362,20 @@ struct FoodCalendarView: View {
                                         Text(diary.dish?.name ?? "未知菜品")
                                             .font(.system(.body, design: .rounded))
                                             .fontWeight(.bold)
+                                        
+                                        // Subtle tag styling
                                         Text(diary.dish?.category ?? "其他")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.white)
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(Color(hex: "#FF5E36"))
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 3)
-                                            .background(Capsule().fill(Color(hex: "#FF5E36")))
+                                            .background(Capsule().fill(Color(hex: "#FF5E36").opacity(0.08)))
                                     }
                                     Spacer()
                                 }
                                 .padding(12)
                                 .background(Color(.secondarySystemBackground))
-                                .cornerRadius(16)
+                                .cornerRadius(12) // Rounded corners for internal card
                                 
                                 // Review Comments
                                 if !diary.comment.isEmpty {
@@ -368,23 +386,33 @@ struct FoodCalendarView: View {
                                         .padding(.horizontal, 4)
                                 }
                                 
-                                // Review Photo attachment
+                                // Review Photo attachment (Clean image border overlay)
                                 if let data = diary.imageData, let uiImage = UIImage(data: data) {
                                     Image(uiImage: uiImage)
                                         .resizable()
                                         .scaledToFill()
                                         .frame(height: 180)
                                         .frame(maxWidth: .infinity)
-                                        .cornerRadius(16)
+                                        .cornerRadius(12)
                                         .clipped()
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                                        )
                                         .onTapGesture {
                                             selectedDiaryForImage = diary
                                         }
                                 }
                             }
                             .padding(16)
-                            .background(Color(.secondarySystemGroupedBackground))
-                            .cornerRadius(22)
+                            .background(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.black.opacity(0.03), lineWidth: 1)
+                            )
                             .shadow(color: Color.black.opacity(0.015), radius: 8, x: 0, y: 4)
                             .padding(.horizontal, 16)
                         }
@@ -451,13 +479,9 @@ struct FoodCalendarView: View {
     }
     
     private func deleteDiary(_ diary: FoodDiary) {
-        Task {
-            do {
-                try await appState.deleteDiary(id: diary.id)
-            } catch {
-                print("Failed to delete diary: \(error)")
-            }
-        }
+        let diaryId = diary.id
+        modelContext.delete(diary)
+        SyncEngine.shared.deleteDiary(id: diaryId, appState: appState)
     }
 }
 
@@ -465,7 +489,12 @@ struct FoodCalendarView: View {
 
 struct AddDiarySheet: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    
+    @Query private var allDishes: [Dish]
+    @Query private var allOrders: [MealOrder]
+    @Query private var members: [FamilyMember]
     
     let diaryDate: Date
     let initialDish: Dish?
@@ -491,7 +520,7 @@ struct AddDiarySheet: View {
     // Get unique dishes prepared/completed on the selected date
     var completedDishesForDate: [Dish] {
         let calendar = Calendar.current
-        let todayCompletedOrders = appState.orders.filter { order in
+        let todayCompletedOrders = allOrders.filter { order in
             calendar.isDate(order.orderDate, inSameDayAs: diaryDate) && order.isFulfilled
         }
         var uniqueDishes: [Dish] = []
@@ -505,7 +534,7 @@ struct AddDiarySheet: View {
     
     var availableDishes: [Dish] {
         if completedDishesForDate.isEmpty || showAllRecipes {
-            return appState.dishes
+            return allDishes
         } else {
             return completedDishesForDate
         }
@@ -731,44 +760,30 @@ struct AddDiarySheet: View {
     
     private func saveDiary() {
         guard let dish = selectedDish else { return }
-        guard let member = appState.currentMember else {
+        guard let activeMemberId = appState.activeMemberId,
+              let member = members.first(where: { $0.id == activeMemberId }) else {
             saveErrorMessage = "请先选择您的家庭角色！"
             return
         }
         
-        isSaving = true
-        saveErrorMessage = ""
-        
-        Task {
-            // Compress image to Base64 to save storage space
-            var base64String: String? = nil
-            if let imageData = imageData {
-                base64String = compressImageToBase64(imageData)
-            }
-            
-            let newDiary = FoodDiary(
-                id: UUID(),
-                diaryDate: diaryDate,
-                rating: rating,
-                comment: comment,
-                memberId: member.id,
-                dishId: dish.id,
-                imageBase64: base64String
-            )
-            
-            do {
-                try await appState.addDiary(newDiary)
-                await MainActor.run {
-                    isSaving = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isSaving = false
-                    saveErrorMessage = "保存失败: \(error.localizedDescription)"
-                }
-            }
+        // Downscale image if needed for storage
+        var finalImageData: Data? = nil
+        if let data = imageData, let compressedBase64 = compressImageToBase64(data) {
+            finalImageData = Data(base64Encoded: compressedBase64)
         }
+        
+        let newDiary = FoodDiary(
+            diaryDate: diaryDate,
+            rating: rating,
+            comment: comment,
+            member: member,
+            dish: dish,
+            imageData: finalImageData ?? imageData
+        )
+        
+        modelContext.insert(newDiary)
+        SyncEngine.shared.push(newDiary, appState: appState)
+        dismiss()
     }
     
     // Scale and compress raw photo data to limit payload size

@@ -1,9 +1,13 @@
 import SwiftUI
+import SwiftData
 import PhotosUI
 
 struct DishDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    
+    @Query private var members: [FamilyMember]
     
     @Bindable var dish: Dish
     
@@ -12,6 +16,7 @@ struct DishDetailView: View {
     @State private var showingOrderSuccess = false
     @State private var isImageViewerPresented = false
     @State private var isOrdering = false
+    @State private var orderErrorMessage = ""
     
     var body: some View {
         NavigationStack {
@@ -62,9 +67,8 @@ struct DishDetailView: View {
                             Button {
                                 withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
                                     dish.isFavorite.toggle()
-                                    Task {
-                                        await appState.updateDish(dish)
-                                    }
+                                    dish.updatedAt = Date()
+                                    SyncEngine.shared.push(dish, appState: appState)
                                 }
                             } label: {
                                 HStack(spacing: 4) {
@@ -112,7 +116,8 @@ struct DishDetailView: View {
                         .padding(.horizontal, 24)
                     
                     // Quick Order Section for Active Member
-                    if let activeMember = appState.currentMember {
+                    if let activeMemberId = appState.activeMemberId,
+                       let activeMember = members.first(where: { $0.id == activeMemberId }) {
                         VStack(spacing: 14) {
                             HStack {
                                 Image(systemName: "pencil.line")
@@ -248,6 +253,17 @@ struct DishDetailView: View {
                 if showingOrderSuccess {
                     OrderSuccessOverlay()
                         .transition(.scale.combined(with: .opacity))
+                } else if !orderErrorMessage.isEmpty {
+                    VStack {
+                        Spacer()
+                        Text(orderErrorMessage)
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(Capsule().fill(Color.red.opacity(0.9)))
+                            .padding(.bottom, 40)
+                    }
                 }
             }
         }
@@ -255,18 +271,28 @@ struct DishDetailView: View {
     
     private func createOrder(member: FamilyMember) {
         isOrdering = true
-        Task {
-            await appState.createOrder(member: member, dish: dish, note: orderNote)
-            isOrdering = false
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                showingOrderSuccess = true
-            }
-            
-            // Hide overlay after 1.6 seconds and close details
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                showingOrderSuccess = false
-                dismiss()
-            }
+        orderErrorMessage = ""
+        
+        let newOrder = MealOrder(
+            id: UUID(),
+            member: member,
+            dish: dish,
+            note: orderNote,
+            orderDate: Date()
+        )
+        
+        modelContext.insert(newOrder)
+        SyncEngine.shared.push(newOrder, appState: appState)
+        
+        isOrdering = false
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            showingOrderSuccess = true
+        }
+        
+        // Hide overlay after 1.6 seconds and close details
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            showingOrderSuccess = false
+            dismiss()
         }
     }
 }
@@ -311,6 +337,7 @@ struct EditDishSheet: View {
     @State private var aiError = ""
     @State private var isImageViewerPresented = false
     @State private var isSaving = false
+    @State private var saveErrorMessage = ""
     
     let categories = ["荤菜", "素菜", "汤羹", "主食", "其他"]
     
@@ -462,21 +489,9 @@ struct EditDishSheet: View {
                             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                             .filter { !$0.isEmpty }
                         
-                        isSaving = true
-                        Task {
-                            do {
-                                try await appState.updateDish(dish)
-                                await MainActor.run {
-                                    isSaving = false
-                                    dismiss()
-                                }
-                            } catch {
-                                await MainActor.run {
-                                    isSaving = false
-                                    self.aiError = "无法保存修改：\(error.localizedDescription)"
-                                }
-                            }
-                        }
+                        dish.updatedAt = Date()
+                        SyncEngine.shared.push(dish, appState: appState)
+                        dismiss()
                     } label: {
                         if isSaving {
                             ProgressView()
@@ -492,6 +507,22 @@ struct EditDishSheet: View {
             .fullScreenCover(isPresented: $isImageViewerPresented) {
                 FullScreenImageViewer(imageData: dish.imageData)
             }
+            .overlay(
+                Group {
+                    if !saveErrorMessage.isEmpty {
+                        VStack {
+                            Spacer()
+                            Text(saveErrorMessage)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Capsule().fill(Color.red.opacity(0.9)))
+                                .padding(.bottom, 20)
+                        }
+                    }
+                }
+            )
         }
     }
     

@@ -6,6 +6,11 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    info:
+      path: "FamilyRecipes/Info.plist"
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     sources:
       - FamilyRecipes
     settings:
@@ -14,6 +19,36 @@ targets:
         DEVELOPMENT_ASSET_PATHS: '"FamilyRecipes/Assets.xcassets"'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UILaunchScreen_Generation: true
-        GENERATE_INFOPLIST_FILE: true
+        GENERATE_INFOPLIST_FILE: false
         ENABLE_PREVIEWS: true
         SWIFT_VERSION: "5.9"
+
+  FamilyRecipesTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - FamilyRecipesTests
+      - FamilyRecipes/Models/Models.swift
+      - FamilyRecipes/Models/DTOs.swift
+      - FamilyRecipes/Models/SyncEngine.swift
+      - FamilyRecipes/Models/SupabaseManager.swift
+      - FamilyRecipes/Models/AppState.swift
+      - FamilyRecipes/Models/AIEngine.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+
+  FamilyRecipesUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - FamilyRecipesUITests
+    dependencies:
+      - target: FamilyRecipes
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+
+

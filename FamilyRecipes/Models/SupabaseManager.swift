@@ -3,6 +3,11 @@ import Foundation
 final class SupabaseManager {
     static let shared = SupabaseManager()
     
+    var mockMembers: [MemberDTO]?
+    var mockDishes: [DishDTO]?
+    var mockOrders: [OrderDTO]?
+    var mockDiaries: [DiaryDTO]?
+    
     private init() {}
     
     // Core HTTP Request Helper
@@ -13,11 +18,15 @@ final class SupabaseManager {
         supabaseURL: String,
         supabaseKey: String
     ) async throws -> Data {
-        guard var components = URLComponents(string: supabaseURL) else {
+        var safeURL = supabaseURL
+        if !safeURL.hasPrefix("http://") && !safeURL.hasPrefix("https://") {
+            safeURL = "http://" + safeURL
+        }
+        
+        guard var components = URLComponents(string: safeURL) else {
             throw URLError(.badURL)
         }
         
-        // Correctly split path and query parameters to prevent percent-encoding of '?' and '='
         let pathAndQuery = urlPath.split(separator: "?")
         let path = String(pathAndQuery[0])
         
@@ -25,7 +34,13 @@ final class SupabaseManager {
         if fullPath.hasSuffix("/") {
             fullPath.removeLast()
         }
-        fullPath += "/rest/v1/\(path)"
+        
+        if components.host?.contains("supabase.co") == true {
+            fullPath += "/rest/v1/\(path)"
+        } else {
+            fullPath += "/\(path)"
+        }
+        
         components.path = fullPath
         
         if pathAndQuery.count > 1 {
@@ -33,7 +48,6 @@ final class SupabaseManager {
                 let parts = item.split(separator: "=")
                 let name = String(parts[0])
                 let value = parts.count > 1 ? String(parts[1]) : ""
-                // Decode percent encoded query items if any
                 return URLQueryItem(name: name, value: value.removingPercentEncoding ?? value)
             }
             components.queryItems = queryItems
@@ -46,9 +60,12 @@ final class SupabaseManager {
         var request = URLRequest(url: url)
         request.httpMethod = method
         
-        // Supabase Headers
-        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(supabaseKey)", forHTTPHeaderField: "Authorization")
+        if supabaseKey.hasPrefix("eyJ") {
+            request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer \(supabaseKey)", forHTTPHeaderField: "Authorization")
+        } else if !supabaseKey.isEmpty {
+            request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         if let body = body {
@@ -78,14 +95,15 @@ final class SupabaseManager {
     
     // MARK: - Family Member Sync API
     
-    func fetchMembers(url: String, key: String) async throws -> [FamilyMember] {
+    func fetchMembers(url: String, key: String) async throws -> [MemberDTO] {
+        if let mock = mockMembers { return mock }
         let data = try await performRequest(urlPath: "family_members?select=*", method: "GET", supabaseURL: url, supabaseKey: key)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([FamilyMember].self, from: data)
+        return try decoder.decode([MemberDTO].self, from: data)
     }
     
-    func upsertMember(_ member: FamilyMember, url: String, key: String) async throws {
+    func upsertMember(_ member: MemberDTO, url: String, key: String) async throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(member)
@@ -98,14 +116,15 @@ final class SupabaseManager {
     
     // MARK: - Dishes Sync API
     
-    func fetchDishes(url: String, key: String) async throws -> [Dish] {
+    func fetchDishes(url: String, key: String) async throws -> [DishDTO] {
+        if let mock = mockDishes { return mock }
         let data = try await performRequest(urlPath: "dishes?select=*", method: "GET", supabaseURL: url, supabaseKey: key)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([Dish].self, from: data)
+        return try decoder.decode([DishDTO].self, from: data)
     }
     
-    func upsertDish(_ dish: Dish, url: String, key: String) async throws {
+    func upsertDish(_ dish: DishDTO, url: String, key: String) async throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(dish)
@@ -118,14 +137,15 @@ final class SupabaseManager {
     
     // MARK: - Meal Orders Sync API
     
-    func fetchOrders(url: String, key: String) async throws -> [MealOrder] {
+    func fetchOrders(url: String, key: String) async throws -> [OrderDTO] {
+        if let mock = mockOrders { return mock }
         let data = try await performRequest(urlPath: "meal_orders?select=*", method: "GET", supabaseURL: url, supabaseKey: key)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([MealOrder].self, from: data)
+        return try decoder.decode([OrderDTO].self, from: data)
     }
     
-    func upsertOrder(_ order: MealOrder, url: String, key: String) async throws {
+    func upsertOrder(_ order: OrderDTO, url: String, key: String) async throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(order)
@@ -138,14 +158,17 @@ final class SupabaseManager {
     
     // MARK: - Food Diary Sync API
     
-    func fetchDiaries(url: String, key: String) async throws -> [FoodDiary] {
+    func fetchDiaries(url: String, key: String) async throws -> [DiaryDTO] {
+        if let mock = mockDiaries { return mock }
         let data = try await performRequest(urlPath: "food_diaries?select=*", method: "GET", supabaseURL: url, supabaseKey: key)
         let decoder = JSONDecoder()
-        return try decoder.decode([FoodDiary].self, from: data)
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([DiaryDTO].self, from: data)
     }
     
-    func upsertDiary(_ diary: FoodDiary, url: String, key: String) async throws {
+    func upsertDiary(_ diary: DiaryDTO, url: String, key: String) async throws {
         let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(diary)
         _ = try await performRequest(urlPath: "food_diaries", method: "POST", body: body, supabaseURL: url, supabaseKey: key)
     }

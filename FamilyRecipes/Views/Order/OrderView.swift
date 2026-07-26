@@ -1,15 +1,25 @@
 import SwiftUI
+import SwiftData
 
 struct OrderView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    
+    @Query private var members: [FamilyMember]
+    @Query private var dishes: [Dish]
+    @Query private var orders: [MealOrder]
     
     @State private var selectedDish: Dish?
     @State private var showingLuckyWheel = false
     
-    // Filter orders to today only from AppState memory
+    var currentMember: FamilyMember? {
+        guard let id = appState.activeMemberId else { return nil }
+        return members.first { $0.id == id }
+    }
+    
     var todayOrders: [MealOrder] {
         let calendar = Calendar.current
-        return appState.orders.filter { order in
+        return orders.filter { order in
             calendar.isDateInToday(order.orderDate) && !order.isFulfilled
         }
     }
@@ -30,8 +40,8 @@ struct OrderView: View {
     }
     
     var popularDishes: [Dish] {
-        let dishes = appState.dishes
-        return dishes.filter { $0.isFavorite }.prefix(4).isEmpty ? Array(dishes.prefix(4)) : dishes.filter { $0.isFavorite }
+        let favs = dishes.filter { $0.isFavorite }
+        return favs.isEmpty ? Array(dishes.prefix(4)) : Array(favs.prefix(4))
     }
     
     var body: some View {
@@ -39,7 +49,7 @@ struct OrderView: View {
             VStack(spacing: 24) {
                 
                 // Welcome Banner Header Card
-                if let member = appState.currentMember {
+                if let member = currentMember {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -57,8 +67,16 @@ struct OrderView: View {
                     }
                     .padding(20)
                     .background(
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(Color(.secondarySystemGroupedBackground))
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(LinearGradient(
+                                colors: [Color(.secondarySystemGroupedBackground), Color(hex: "#FF5E36").opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(Color(hex: "#FF5E36").opacity(0.08), lineWidth: 1)
                     )
                     .shadow(color: Color.black.opacity(0.015), radius: 10, x: 0, y: 5)
                     .padding(.horizontal, 16)
@@ -156,40 +174,63 @@ struct OrderView: View {
                             HStack(spacing: 14) {
                                 ForEach(groupedTodayOrders) { group in
                                     VStack(alignment: .leading, spacing: 10) {
-                                        HStack {
-                                            Text(group.dish.emoji)
-                                                .font(.title3)
-                                            Text(group.dish.name)
-                                                .font(.system(.subheadline, design: .rounded))
-                                                .fontWeight(.bold)
-                                                .lineLimit(1)
+                                        Group {
+                                            if let data = group.dish.imageData, let uiImage = UIImage(data: data) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            } else {
+                                                Text(group.dish.emoji)
+                                                    .font(.system(size: 32))
+                                            }
                                         }
+                                        .frame(height: 70)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .fill(LinearGradient(
+                                                    colors: [Color(hex: "#FFFBF0"), Color(hex: "#FFEBE7")],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                ))
+                                        )
+                                        .clipped()
+                                        .cornerRadius(12)
                                         
-                                        // Avatars of members who ordered this
-                                        HStack(spacing: -8) {
-                                            ForEach(group.orders.prefix(5)) { order in
-                                                Text(order.member?.emoji ?? "👤")
-                                                    .font(.footnote)
-                                                    .frame(width: 24, height: 24)
-                                                    .background(Circle().fill(Color.orange.opacity(0.2)))
-                                                    .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
+                                        Text(group.dish.name)
+                                            .font(.system(.subheadline, design: .rounded))
+                                            .fontWeight(.bold)
+                                            .foregroundColor(Color(.label))
+                                            .lineLimit(1)
+                                        
+                                        HStack {
+                                            // Avatars of members who ordered this
+                                            HStack(spacing: -8) {
+                                                ForEach(group.orders.prefix(5)) { order in
+                                                    Text(order.member?.emoji ?? "👤")
+                                                        .font(.footnote)
+                                                        .frame(width: 24, height: 24)
+                                                        .background(Circle().fill(Color.orange.opacity(0.2)))
+                                                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
+                                                }
+                                                
+                                                if group.orders.count > 5 {
+                                                    Text("+\(group.orders.count - 5)")
+                                                        .font(.system(size: 8, weight: .bold))
+                                                        .frame(width: 24, height: 24)
+                                                        .background(Circle().fill(Color(.separator)))
+                                                        .foregroundColor(Color(.secondaryLabel))
+                                                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
+                                                }
                                             }
-                                            
-                                            if group.orders.count > 5 {
-                                                Text("+\(group.orders.count - 5)")
-                                                    .font(.system(size: 8, weight: .bold))
-                                                    .frame(width: 24, height: 24)
-                                                    .background(Circle().fill(Color(.separator)))
-                                                    .foregroundColor(Color(.secondaryLabel))
-                                                    .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
-                                            }
+                                            Spacer()
                                         }
                                     }
-                                    .padding(14)
-                                    .frame(width: 150)
+                                    .padding(12)
+                                    .frame(width: 160)
                                     .background(Color(.secondarySystemGroupedBackground))
-                                    .cornerRadius(18)
-                                    .shadow(color: Color.black.opacity(0.015), radius: 6, x: 0, y: 3)
+                                    .cornerRadius(20)
+                                    .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 3)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -204,7 +245,7 @@ struct OrderView: View {
                         .fontWeight(.bold)
                         .padding(.horizontal, 16)
                     
-                    if appState.dishes.isEmpty {
+                    if dishes.isEmpty {
                         Text("暂无推荐，先去“共享菜谱”添加一些常吃菜吧！")
                             .font(.caption)
                             .foregroundColor(Color(.secondaryLabel))
@@ -229,7 +270,7 @@ struct OrderView: View {
                                         .frame(height: 80)
                                         .frame(maxWidth: .infinity, alignment: .center)
                                         .background(
-                                            RoundedRectangle(cornerRadius: 16)
+                                            RoundedRectangle(cornerRadius: 12)
                                                 .fill(LinearGradient(
                                                     colors: [Color(hex: "#FFFBF0"), Color(hex: "#FFEBE7")],
                                                     startPoint: .top,
@@ -237,7 +278,7 @@ struct OrderView: View {
                                                 ))
                                         )
                                         .clipped()
-                                        .cornerRadius(16)
+                                        .cornerRadius(12)
                                         
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(dish.name)
@@ -265,8 +306,7 @@ struct OrderView: View {
                 }
                 
                 // 3. Fast Cook Access Banner
-                // 3. Fast Cook Access Callout (精致的iOS提示性卡片，使用轻量橙色背景加左侧高亮竖条线)
-                if appState.currentMember?.role == "Cook" {
+                if currentMember?.role == "Cook" {
                     HStack(spacing: 12) {
                         // Left vertical accent bar
                         RoundedRectangle(cornerRadius: 3)
@@ -291,11 +331,11 @@ struct OrderView: View {
                     .padding(.vertical, 12)
                     .padding(.horizontal, 16)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 20)
                             .fill(Color(hex: "#FF5E36").opacity(0.06))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 20)
                             .stroke(Color(hex: "#FF5E36").opacity(0.12), lineWidth: 1)
                     )
                     .padding(.horizontal, 16)
@@ -313,7 +353,7 @@ struct OrderView: View {
                 .environment(appState)
         }
         .refreshable {
-            await appState.fetchAllData()
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
         }
     }
 }

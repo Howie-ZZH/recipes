@@ -1,15 +1,18 @@
 import SwiftUI
+import SwiftData
 
 struct CookDashboardView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    @Query private var allOrders: [MealOrder]
     
     @State private var dashboardMode = 0 // 0: 今日菜品, 1: 智能买菜清单
     @State private var checkedIngredients: Set<String> = []
+    @Namespace private var segmentNamespace
     
-    // All today's orders
     var todayOrders: [MealOrder] {
         let calendar = Calendar.current
-        return appState.orders.filter { calendar.isDateInToday($0.orderDate) }
+        return allOrders.filter { calendar.isDateInToday($0.orderDate) }
     }
     
     // Active today orders from AppState memory
@@ -75,14 +78,35 @@ struct CookDashboardView: View {
         VStack(spacing: 0) {
             
             // Sub-navigation segmented controller
-            Picker("工作台模式", selection: $dashboardMode) {
-                Text("🍳 今日菜单 (\(activeOrders.count))").tag(0)
-                Text("🛒 自动买菜单 (\(shoppingList.count))").tag(1)
+            HStack(spacing: 0) {
+                ForEach(0..<2) { mode in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            dashboardMode = mode
+                        }
+                    } label: {
+                        Text(mode == 0 ? "🍳 今日菜单 (\(activeOrders.count))" : "🛒 自动买菜单 (\(shoppingList.count))")
+                            .font(.system(.subheadline, design: .rounded))
+                            .fontWeight(.bold)
+                            .foregroundColor(dashboardMode == mode ? .white : Color(.secondaryLabel))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .background(
+                        ZStack {
+                            if dashboardMode == mode {
+                                Capsule()
+                                    .fill(Color(hex: "#FF5E36"))
+                                    .matchedGeometryEffect(id: "activeSegment", in: segmentNamespace)
+                            }
+                        }
+                    )
+                }
             }
-            .pickerStyle(.segmented)
+            .padding(4)
+            .background(Capsule().fill(Color(.secondarySystemBackground)))
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(.secondarySystemBackground))
             
             if dashboardMode == 0 {
                 // TODAY'S DISH PREPARATION WORKSPACE
@@ -116,8 +140,19 @@ struct CookDashboardView: View {
                                                 .font(.title2)
                                             
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(group.dish.name)
-                                                    .font(.headline)
+                                                HStack(spacing: 8) {
+                                                    Text(group.dish.name)
+                                                        .font(.headline)
+                                                    
+                                                    let totalCount = todayOrders.filter { $0.dish?.id == group.dish.id }.count
+                                                    let fulfilledCount = todayOrders.filter { $0.dish?.id == group.dish.id && $0.isFulfilled }.count
+                                                    Text("\(fulfilledCount) / \(totalCount) 已做")
+                                                        .font(.system(size: 11, weight: .bold))
+                                                        .foregroundColor(.green)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 2)
+                                                        .background(Capsule().fill(Color.green.opacity(0.12)))
+                                                }
                                                 Text(group.dish.category)
                                                     .font(.caption2)
                                                     .foregroundColor(Color(hex: "#FF5E36"))
@@ -208,10 +243,21 @@ struct CookDashboardView: View {
                                                 .opacity(0.6)
                                             
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(group.dish.name)
-                                                    .font(.headline)
-                                                    .strikethrough()
-                                                    .foregroundColor(Color(.secondaryLabel))
+                                                HStack(spacing: 8) {
+                                                    Text(group.dish.name)
+                                                        .font(.headline)
+                                                        .strikethrough()
+                                                        .foregroundColor(Color(.secondaryLabel))
+                                                    
+                                                    let totalCount = todayOrders.filter { $0.dish?.id == group.dish.id }.count
+                                                    let fulfilledCount = todayOrders.filter { $0.dish?.id == group.dish.id && $0.isFulfilled }.count
+                                                    Text("\(fulfilledCount) / \(totalCount) 已做")
+                                                        .font(.system(size: 11, weight: .bold))
+                                                        .foregroundColor(.green)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 2)
+                                                        .background(Capsule().fill(Color.green.opacity(0.12)))
+                                                }
                                                 Text(group.dish.category)
                                                     .font(.caption2)
                                                     .foregroundColor(Color(.secondaryLabel))
@@ -323,39 +369,53 @@ struct CookDashboardView: View {
                         .padding(.top, 14)
                         .padding(.bottom, 8)
                         
-                        List {
-                            ForEach(shoppingList, id: \.self) { ingredient in
-                                Button {
-                                    withAnimation(.interactiveSpring()) {
-                                        if checkedIngredients.contains(ingredient) {
-                                            checkedIngredients.remove(ingredient)
-                                        } else {
-                                            checkedIngredients.insert(ingredient)
+                        ScrollView {
+                            VStack(spacing: 10) {
+                                ForEach(shoppingList, id: \.self) { ingredient in
+                                    Button {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            if checkedIngredients.contains(ingredient) {
+                                                checkedIngredients.remove(ingredient)
+                                            } else {
+                                                checkedIngredients.insert(ingredient)
+                                            }
                                         }
+                                    } label: {
+                                        let isChecked = checkedIngredients.contains(ingredient)
+                                        HStack(spacing: 14) {
+                                            ZStack {
+                                                Image(systemName: "circle")
+                                                    .font(.title3)
+                                                    .foregroundColor(Color(hex: "#FF5E36"))
+                                                    .scaleEffect(isChecked ? 0.8 : 1.0)
+                                                    .opacity(isChecked ? 0.0 : 1.0)
+                                                
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.title3)
+                                                    .foregroundColor(.green)
+                                                    .scaleEffect(isChecked ? 1.0 : 0.8)
+                                                    .opacity(isChecked ? 1.0 : 0.0)
+                                            }
+                                            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isChecked)
+                                            
+                                            Text(ingredient)
+                                                .font(.system(.body, design: .rounded))
+                                                .foregroundColor(isChecked ? Color(.tertiaryLabel) : Color(.label))
+                                                .strikethrough(isChecked, color: Color(.tertiaryLabel))
+                                            
+                                            Spacer()
+                                        }
+                                        .padding(.vertical, 12)
+                                        .padding(.horizontal, 16)
+                                        .background(Color(.secondarySystemGroupedBackground))
+                                        .cornerRadius(12)
                                     }
-                                } label: {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: checkedIngredients.contains(ingredient) ? "checkmark.circle.fill" : "circle")
-                                            .font(.title3)
-                                            .foregroundColor(checkedIngredients.contains(ingredient) ? .green : Color(hex: "#FF5E36"))
-                                        
-                                        Text(ingredient)
-                                            .font(.system(.body, design: .rounded))
-                                            .foregroundColor(checkedIngredients.contains(ingredient) ? Color(.tertiaryLabel) : Color(.label))
-                                            .strikethrough(checkedIngredients.contains(ingredient), color: Color(.tertiaryLabel))
-                                        
-                                        Spacer()
-                                    }
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(ScaledButtonStyle())
                                 }
-                                .buttonStyle(.plain)
-                                .listRowBackground(Color(.secondarySystemGroupedBackground))
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 20)
                         }
-                        .cornerRadius(20)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 20)
-                        .listStyle(.insetGrouped)
                     }
                     .background(Color(.systemGroupedBackground))
                 }
@@ -366,42 +426,34 @@ struct CookDashboardView: View {
     
     // Complete entire dish group
     private func completeDish(group: DishGroupedOrder) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            for order in group.orders {
-                Task {
-                    await appState.fulfillOrder(order)
-                }
-            }
+        for order in group.orders {
+            order.isFulfilled = true
+            order.updatedAt = Date()
+            SyncEngine.shared.push(order, appState: appState)
         }
     }
     
     // Complete single person's dish request
     private func completeSingleOrder(order: MealOrder) {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            Task {
-                await appState.fulfillOrder(order)
-            }
-        }
+        order.isFulfilled = true
+        order.updatedAt = Date()
+        SyncEngine.shared.push(order, appState: appState)
     }
     
     // Revert entire dish group
     private func revertDish(group: DishGroupedOrder) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            for order in group.orders {
-                Task {
-                    await appState.revertOrder(order)
-                }
-            }
+        for order in group.orders {
+            order.isFulfilled = false
+            order.updatedAt = Date()
+            SyncEngine.shared.push(order, appState: appState)
         }
     }
     
     // Revert single person's dish request
     private func revertSingleOrder(order: MealOrder) {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            Task {
-                await appState.revertOrder(order)
-            }
-        }
+        order.isFulfilled = false
+        order.updatedAt = Date()
+        SyncEngine.shared.push(order, appState: appState)
     }
 }
 

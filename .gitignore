@@ -8,3 +8,7 @@ project.xcworkspace/xcuserdata/
 build/
 Build/
 DerivedData/
+build.log
+
+# agents folder
+.agents/

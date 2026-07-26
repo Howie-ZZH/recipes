@@ -48,14 +48,4 @@ struct SampleData {
         
         return [order1, order2, order3, order4]
     }
-    
-    @MainActor
-    static var previewState: AppState {
-        let state = AppState()
-        state.members = mockMembers
-        state.dishes = mockDishes
-        state.orders = mockOrders
-        state.setActiveMember(mockMembers[0])
-        return state
-    }
 }

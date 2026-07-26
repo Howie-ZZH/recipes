@@ -1,11 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct CloudSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     
-    @State private var url = "https://sbghojlespqzdelxrarh.supabase.co"
-    @State private var key = "sb_publishable_dsiukZ2DCrqIB6FzNZ7-Lw_h1Kae7J8"
+    @State private var url = "http://47.79.236.127:3000"
+    @State private var key = ""
     
     @State private var testStatus = ""
     @State private var isTesting = false
@@ -19,7 +21,8 @@ struct CloudSettingsView: View {
         name TEXT NOT NULL,
         emoji TEXT NOT NULL,
         role TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- 2. 创建菜谱表
@@ -34,7 +37,8 @@ struct CloudSettingsView: View {
         cook_note TEXT NOT NULL,
         is_favorite BOOLEAN NOT NULL,
         image_base64 TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- 3. 创建今日点餐表
@@ -45,7 +49,8 @@ struct CloudSettingsView: View {
         order_date TIMESTAMPTZ NOT NULL,
         note TEXT NOT NULL,
         is_fulfilled BOOLEAN NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- 4. 创建美食日记表
@@ -57,25 +62,32 @@ struct CloudSettingsView: View {
         rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
         comment TEXT NOT NULL,
         image_base64 TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- 5. 为已有表添加 updated_at 列（如果缺失）
+    ALTER TABLE family_members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE dishes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE meal_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE food_diaries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     """
     
     var body: some View {
         NavigationStack {
             Form {
-                Section("云原生架构说明") {
+                Section("自建云端架构说明") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            Image(systemName: "icloud.fill")
+                            Image(systemName: "server.rack")
                                 .font(.title3)
                                 .foregroundColor(.green)
-                            Text("已启用纯云端实时读写")
+                            Text("已连接自建 PostgREST 服务")
                                 .font(.headline)
                                 .fontWeight(.bold)
                         }
                         
-                        Text("当前 App 已全面采用纯云端架构，所有菜谱、家庭成员及点单信息均直接安全地存储于您的 Supabase 专有云数据库中。多端瞬间对齐，无任何本地缓存同步冲突。")
+                        Text("当前 App 已连接到您自建的 PostgreSQL + PostgREST 后端服务。所有菜谱、家庭成员及点单信息均直接存储于您的私有数据库中，数据完全自主掌控。")
                             .font(.caption)
                             .foregroundColor(Color(.secondaryLabel))
                             .lineSpacing(4)
@@ -83,14 +95,14 @@ struct CloudSettingsView: View {
                     .padding(.vertical, 4)
                 }
                 
-                Section(header: Text("Supabase / MemFire 配置"), footer: Text("默认已为您填入您的私有云数据库凭据，如需修改，请在上方贴入新的 Project URL 与 anon key。")) {
-                    TextField("Project URL", text: $url)
+                Section(header: Text("PostgREST 服务器配置"), footer: Text("默认已为您填入自建服务器地址。如需修改，请在上方贴入新的服务器 URL。API Key 可留空（取决于您的 PostgREST 配置）。")) {
+                    TextField("服务器 URL（如 http://IP:3000）", text: $url)
                         .autocorrectionDisabled()
                         .onChange(of: url) { _, newValue in
                             appState.setSupabaseURL(newValue)
                         }
                     
-                    SecureField("anon key", text: $key)
+                    SecureField("API Key（可选）", text: $key)
                         .autocorrectionDisabled()
                         .onChange(of: key) { _, newValue in
                             appState.setSupabaseKey(newValue)
@@ -110,7 +122,7 @@ struct CloudSettingsView: View {
                         .foregroundColor(Color(hex: "#FF5E36"))
                         .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .disabled(isTesting || url.isEmpty || key.isEmpty)
+                    .disabled(isTesting || url.isEmpty)
                     
                     if !testStatus.isEmpty {
                         Text(testStatus)
@@ -121,7 +133,7 @@ struct CloudSettingsView: View {
                     }
                 }
                 
-                Section(header: Text("云端一键建表脚本 (SQL)"), footer: Text("提示：使用云数据库前，请务必先复制此脚本，前往您的 Supabase 网页的 SQL Editor 中粘贴并点击 'Run' 运行建表。")) {
+                Section(header: Text("数据库建表脚本 (SQL)"), footer: Text("提示：使用前请先将此脚本在您的 PostgreSQL 客户端（如 psql 或 pgAdmin）中执行，以创建所需的数据表。")) {
                     Button {
                         UIPasteboard.general.string = sqlScript
                         withAnimation {
@@ -177,7 +189,7 @@ struct CloudSettingsView: View {
                 // Test connection by fetching members
                 _ = try await SupabaseManager.shared.fetchMembers(url: url, key: key)
                 
-                await appState.fetchAllData()
+                await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
                 
                 await MainActor.run {
                     testSuccess = true
@@ -187,7 +199,7 @@ struct CloudSettingsView: View {
             } catch {
                 await MainActor.run {
                     testSuccess = false
-                    testStatus = "❌ 连接失败: \(error.localizedDescription)\n请确保您已经在 Supabase SQL Editor 中运行了建表 SQL 脚本！"
+                    testStatus = "❌ 连接失败: \(error.localizedDescription)\n请确保您的 PostgREST 服务正在运行，且已执行了建表 SQL 脚本！"
                     isTesting = false
                 }
             }

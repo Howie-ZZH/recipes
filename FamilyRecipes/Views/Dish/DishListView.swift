@@ -1,18 +1,22 @@
 import SwiftUI
+import SwiftData
 import PhotosUI
 
 struct DishListView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Dish.name) private var dishes: [Dish]
     
     @State private var searchText = ""
     @State private var selectedCategory = "全部"
     @State private var showingAddSheet = false
     @State private var selectedDish: Dish?
+    @Namespace private var categoryNamespace
     
     let categories = ["全部", "荤菜", "素菜", "汤羹", "主食", "其他"]
     
     var filteredDishes: [Dish] {
-        appState.dishes.filter { dish in
+        dishes.filter { dish in
             let matchesSearch = searchText.isEmpty || 
                                 dish.name.localizedCaseInsensitiveContains(searchText) ||
                                 dish.tags.contains(where: { $0.localizedCaseInsensitiveContains(searchText) }) ||
@@ -48,6 +52,7 @@ struct DishListView: View {
                         .foregroundColor(Color(hex: "#FF5E36"))
                 }
                 .buttonStyle(ScaledButtonStyle())
+                .accessibilityIdentifier("addDishButton")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -57,20 +62,28 @@ struct DishListView: View {
                 HStack(spacing: 8) {
                     ForEach(categories, id: \.self) { category in
                         Button {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 selectedCategory = category
                             }
                         } label: {
                             Text(category)
                                 .font(.system(.subheadline, design: .rounded))
                                 .fontWeight(.bold)
+                                .foregroundColor(selectedCategory == category ? .white : Color(.secondaryLabel))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .background(
-                                    Capsule()
-                                        .fill(selectedCategory == category ? Color(hex: "#FF5E36") : Color(.systemGroupedBackground))
+                                    ZStack {
+                                        if selectedCategory == category {
+                                            Capsule()
+                                                .fill(Color(hex: "#FF5E36"))
+                                                .matchedGeometryEffect(id: "activeCategoryBadge", in: categoryNamespace)
+                                        } else {
+                                            Capsule()
+                                                .fill(Color(.systemGroupedBackground))
+                                        }
+                                    }
                                 )
-                                .foregroundColor(selectedCategory == category ? .white : Color(.secondaryLabel))
                         }
                         .buttonStyle(.plain)
                     }
@@ -118,7 +131,7 @@ struct DishListView: View {
                 .listStyle(.plain)
                 .refreshable {
                     // Pull to refresh from Supabase
-                    await appState.fetchAllData()
+                    await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
                 }
             }
         }
@@ -134,14 +147,11 @@ struct DishListView: View {
     }
     
     private func deleteDishes(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                let dish = filteredDishes[index]
-                let dishId = dish.id
-                Task {
-                    await appState.deleteDish(id: dishId)
-                }
-            }
+        for index in offsets {
+            let dish = filteredDishes[index]
+            let dishId = dish.id
+            modelContext.delete(dish)
+            SyncEngine.shared.deleteDish(id: dishId, appState: appState)
         }
     }
 }
@@ -208,9 +218,12 @@ struct DishRow: View {
                 if !dish.tags.isEmpty {
                     HStack(spacing: 6) {
                         ForEach(dish.tags.prefix(3), id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(Color(.tertiaryLabel))
+                            Text(tag)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Color(hex: "#FF5E36"))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color(hex: "#FF5E36").opacity(0.06)))
                         }
                     }
                 }
@@ -218,14 +231,16 @@ struct DishRow: View {
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(20)
-        .shadow(color: Color.black.opacity(0.025), radius: 8, x: 0, y: 4)
+        .cornerRadius(18)
+        .shadow(color: Color(hex: "#FF5E36").opacity(0.04), radius: 10, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(0.015), radius: 4, x: 0, y: 2)
     }
 }
 
 // Add Dish Sheet
 struct AddDishSheet: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
     @State private var name = ""
@@ -243,6 +258,7 @@ struct AddDishSheet: View {
     @State private var aiError = ""
     @State private var isImageViewerPresented = false
     @State private var isSaving = false
+    @State private var saveErrorMessage = ""
     
     let categories = ["荤菜", "素菜", "汤羹", "主食", "其他"]
     let foodEmojis = ["🍳", "🍲", "🥩", "🐟", "🥔", "🥣", "🍚", "🥟", "🍤", "🍗", "🥬", "🌽", "🍖", "🍜", "🍞", "🍓"]
@@ -442,21 +458,9 @@ struct AddDishSheet: View {
                             cookNote: cookNote,
                             imageData: imageData
                         )
-                        isSaving = true
-                        Task {
-                            do {
-                                try await appState.addDish(newDish)
-                                await MainActor.run {
-                                    isSaving = false
-                                    dismiss()
-                                }
-                            } catch {
-                                await MainActor.run {
-                                    isSaving = false
-                                    self.aiError = "无法添加菜品：\(error.localizedDescription)"
-                                }
-                            }
-                        }
+                        modelContext.insert(newDish)
+                        SyncEngine.shared.push(newDish, appState: appState)
+                        dismiss()
                     } label: {
                         if isSaving {
                             ProgressView()
@@ -469,6 +473,22 @@ struct AddDishSheet: View {
                     .disabled(name.isEmpty || isSaving)
                 }
             }
+            .overlay(
+                Group {
+                    if !saveErrorMessage.isEmpty {
+                        VStack {
+                            Spacer()
+                            Text(saveErrorMessage)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Capsule().fill(Color.red.opacity(0.9)))
+                                .padding(.bottom, 20)
+                        }
+                    }
+                }
+            )
             .fullScreenCover(isPresented: $isImageViewerPresented) {
                 FullScreenImageViewer(imageData: imageData)
             }

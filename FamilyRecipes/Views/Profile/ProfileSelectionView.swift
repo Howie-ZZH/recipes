@@ -1,10 +1,14 @@
 import SwiftUI
+import SwiftData
 
 struct ProfileSelectionView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FamilyMember.name) private var members: [FamilyMember]
     
     @State private var showingAddSheet = false
     @State private var showSettingsSheet = false
+    @State private var showCloudSettingsSheet = false
     
     let columns = [
         GridItem(.adaptive(minimum: 100, maximum: 120), spacing: 20)
@@ -21,8 +25,21 @@ struct ProfileSelectionView: View {
             .ignoresSafeArea()
             
             VStack(spacing: 35) {
-                Spacer()
-                    .frame(height: 40)
+                HStack {
+                    Spacer()
+                    Button {
+                        showCloudSettingsSheet = true
+                    } label: {
+                        Image(systemName: "cloud.fill")
+                            .font(.title3)
+                            .foregroundColor(Color(hex: "#FF5E36"))
+                            .padding(10)
+                            .background(Circle().fill(Color(hex: "#FF5E36").opacity(0.1)))
+                    }
+                    .buttonStyle(ScaledButtonStyle())
+                    .padding(.trailing, 20)
+                    .padding(.top, 20)
+                }
                 
                 // Warm Header
                 VStack(spacing: 12) {
@@ -49,19 +66,20 @@ struct ProfileSelectionView: View {
                         .multilineTextAlignment(.center)
                 }
                 
-                // Loading Spinner
-                if appState.isLoading {
-                    ProgressView("云端载入中...")
-                        .tint(Color(hex: "#FF5E36"))
+                // Sync Indicator (Non-blocking)
+                if appState.isSyncing {
+                    Text("🔄 云端同步中...")
+                        .font(.caption)
                         .foregroundColor(Color(.secondaryLabel))
-                } else {
-                    // Members Grid
-                    ScrollView(.vertical, showsIndicators: false) {
+                }
+                
+                // Members Grid
+                ScrollView(.vertical, showsIndicators: false) {
                         LazyVGrid(columns: columns, spacing: 24) {
-                            ForEach(appState.members) { member in
+                            ForEach(members) { member in
                                 Button {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                        appState.setActiveMember(member)
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                        appState.activeMemberId = member.id
                                     }
                                 } label: {
                                     VStack(spacing: 12) {
@@ -127,7 +145,6 @@ struct ProfileSelectionView: View {
                         }
                         .padding(.horizontal, 30)
                     }
-                }
                 
                 Spacer()
                 
@@ -156,6 +173,10 @@ struct ProfileSelectionView: View {
         }
         .sheet(isPresented: $showSettingsSheet) {
             MemberManageView()
+                .environment(appState)
+        }
+        .sheet(isPresented: $showCloudSettingsSheet) {
+            CloudSettingsView()
                 .environment(appState)
         }
     }
@@ -201,12 +222,14 @@ extension Color {
 // Add Member Sheet
 struct AddMemberSheet: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
     @State private var name = ""
     @State private var selectedEmoji = "👨"
     @State private var isCook = false
     @State private var isSaving = false
+    @State private var saveErrorMessage = ""
     
     let emojis = ["👨", "👩‍🍳", "👧", "👦", "👵", "👴", "🦁", "🐼", "🦊", "🐱", "🐶", "🦖"]
     
@@ -258,16 +281,14 @@ struct AddMemberSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        isSaving = true
-                        Task {
-                            await appState.addMember(
-                                name: name.isEmpty ? "新成员" : name,
-                                emoji: selectedEmoji,
-                                role: isCook ? "Cook" : "Member"
-                            )
-                            isSaving = false
-                            dismiss()
-                        }
+                        let newMember = FamilyMember(
+                            name: name.isEmpty ? "新成员" : name,
+                            emoji: selectedEmoji,
+                            role: isCook ? "Cook" : "Member"
+                        )
+                        modelContext.insert(newMember)
+                        SyncEngine.shared.push(newMember, appState: appState)
+                        dismiss()
                     } label: {
                         if isSaving {
                             ProgressView()
@@ -280,6 +301,22 @@ struct AddMemberSheet: View {
                     .disabled(name.isEmpty || isSaving)
                 }
             }
+            .overlay(
+                Group {
+                    if !saveErrorMessage.isEmpty {
+                        VStack {
+                            Spacer()
+                            Text(saveErrorMessage)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Capsule().fill(Color.red.opacity(0.9)))
+                                .padding(.bottom, 20)
+                        }
+                    }
+                }
+            )
         }
     }
 }

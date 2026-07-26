@@ -1,15 +1,18 @@
 import SwiftUI
+import SwiftData
 
 struct MemberManageView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FamilyMember.name) private var members: [FamilyMember]
     
     @State private var editingMember: FamilyMember?
     
     var body: some View {
         NavigationStack {
             List {
-                ForEach(appState.members) { member in
+                ForEach(members) { member in
                     HStack(spacing: 16) {
                         Text(member.emoji)
                             .font(.system(size: 32))
@@ -57,15 +60,11 @@ struct MemberManageView: View {
     }
     
     private func deleteMembers(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                let member = appState.members[index]
-                let memberId = member.id
-                
-                Task {
-                    await appState.deleteMember(id: memberId)
-                }
-            }
+        for index in offsets {
+            let member = members[index]
+            let memberId = member.id
+            modelContext.delete(member)
+            SyncEngine.shared.deleteMember(id: memberId, appState: appState)
         }
     }
 }
@@ -77,6 +76,7 @@ struct EditMemberSheet: View {
     @Bindable var member: FamilyMember
     
     @State private var isSaving = false
+    @State private var saveErrorMessage = ""
     
     let emojis = ["👨", "👩‍🍳", "👧", "👦", "👵", "👴", "🦁", "🐼", "🦊", "🐱", "🐶", "🦖"]
     
@@ -124,24 +124,33 @@ struct EditMemberSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        isSaving = true
-                        Task {
-                            await appState.updateMember(member)
-                            isSaving = false
-                            dismiss()
-                        }
+                        member.updatedAt = Date()
+                        SyncEngine.shared.push(member, appState: appState)
+                        dismiss()
                     } label: {
-                        if isSaving {
-                            ProgressView()
-                        } else {
-                            Text("保存")
-                                .fontWeight(.bold)
-                        }
+                        Text("保存")
+                            .fontWeight(.bold)
                     }
                     .foregroundColor(Color(hex: "#FF5E36"))
                     .disabled(isSaving)
                 }
             }
+            .overlay(
+                Group {
+                    if !saveErrorMessage.isEmpty {
+                        VStack {
+                            Spacer()
+                            Text(saveErrorMessage)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Capsule().fill(Color.red.opacity(0.9)))
+                                .padding(.bottom, 20)
+                        }
+                    }
+                }
+            )
         }
     }
 }

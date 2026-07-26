@@ -1,8 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct MainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
+    
+    @Query private var members: [FamilyMember]
+    
     @State private var selectedTab = 0
     @State private var showingCloudSettings = false
     
@@ -64,14 +69,15 @@ struct MainTabView: View {
                         Button {
                             // Return to member selection with animation
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                appState.setActiveMember(nil)
+                                appState.logout()
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                Text(appState.currentMember?.emoji ?? "👤")
+                                let activeMember = members.first(where: { $0.id == appState.activeMemberId })
+                                Text(activeMember?.emoji ?? "👤")
                                     .font(.body)
                                 
-                                Text(appState.currentMember?.name ?? "切换角色")
+                                Text(activeMember?.name ?? "切换角色")
                                     .font(.system(.footnote, design: .rounded))
                                     .fontWeight(.bold)
                                     .foregroundColor(Color(hex: "#FF5E36"))
@@ -96,12 +102,12 @@ struct MainTabView: View {
             }
             .task {
                 // Pull down data on appear
-                await appState.fetchAllData()
+                await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     Task {
-                        await appState.fetchAllData()
+                        await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
                     }
                 }
             }

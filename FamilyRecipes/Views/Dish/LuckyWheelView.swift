@@ -1,8 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct LuckyWheelView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    
+    @Query private var allDishes: [Dish]
+    @Query private var members: [FamilyMember]
     
     // States
     @State private var rotationAngle: Double = 0.0
@@ -11,6 +16,7 @@ struct LuckyWheelView: View {
     @State private var showResultModal = false
     @State private var isOrdering = false
     @State private var orderStatusMessage = ""
+    @State private var pointerWiggleAngle: Double = 0.0
     
     // Colors for sectors
     let sectorColors: [Color] = [
@@ -26,7 +32,7 @@ struct LuckyWheelView: View {
     
     // Dynamically prepared items for the wheel (at least 6, max 8)
     var wheelItems: [Dish] {
-        let savedDishes = appState.dishes
+        let savedDishes = allDishes
         if savedDishes.count >= 3 {
             let favorites = savedDishes.filter { $0.isFavorite }
             if favorites.count >= 3 {
@@ -157,6 +163,7 @@ struct LuckyWheelView: View {
                             .frame(width: 66, height: 66)
                             .background(Circle().fill(Color.white))
                     }
+                    .buttonStyle(ScaledButtonStyle())
                     .disabled(isSpinning)
                 }
                 .frame(width: 320, height: 320)
@@ -166,7 +173,7 @@ struct LuckyWheelView: View {
                         .font(.title2)
                         .foregroundColor(Color(hex: "#FF5E36"))
                         .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
-                        .rotationEffect(.degrees(180))
+                        .rotationEffect(.degrees(180 + pointerWiggleAngle))
                         .offset(y: -154),
                     alignment: .center
                 )
@@ -263,6 +270,7 @@ struct LuckyWheelView: View {
                             )
                             .shadow(color: Color(hex: "#FF5E36").opacity(0.3), radius: 6, x: 0, y: 3)
                         }
+                        .buttonStyle(ScaledButtonStyle())
                         .disabled(isOrdering)
                         
                         Button {
@@ -279,6 +287,7 @@ struct LuckyWheelView: View {
                                 .padding(.vertical, 12)
                                 .background(Capsule().stroke(Color(hex: "#FF5E36"), lineWidth: 1.5))
                         }
+                        .buttonStyle(ScaledButtonStyle())
                         .disabled(isOrdering)
                     }
                     .padding(.horizontal, 16)
@@ -308,7 +317,28 @@ struct LuckyWheelView: View {
         isSpinning = true
         orderStatusMessage = ""
         
-        // Haptic feedback
+        // Pointer wiggle animation setup
+        withAnimation(.linear(duration: 0.12).repeatForever(autoreverses: true)) {
+            pointerWiggleAngle = -10.0
+        }
+        
+        // Dynamic decelerating haptic ticks
+        let totalTicks = 35
+        for i in 0..<totalTicks {
+            let progress = Double(i) / Double(totalTicks)
+            let delay = pow(progress, 2.0) * 4.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if self.isSpinning {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    // Tweak pointer wiggle direction on each tick to synchronize with the wheel items passing
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
+                        pointerWiggleAngle = (i % 2 == 0) ? 8.0 : -8.0
+                    }
+                }
+            }
+        }
+        
+        // Haptic feedback initial burst
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         let items = wheelItems
@@ -326,13 +356,17 @@ struct LuckyWheelView: View {
         let currentNormalized = rotationAngle.truncatingRemainder(dividingBy: 360.0)
         let newAngle = rotationAngle - currentNormalized + extraSpins + targetOffset
         
-        withAnimation(.spring(response: 4.0, dampingFraction: 0.82, blendDuration: 0)) {
+        withAnimation(.spring(response: 4.0, dampingFraction: 0.85, blendDuration: 0)) {
             rotationAngle = newAngle
         }
         
         // Wait for animation to finish
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             isSpinning = false
+            // Reset pointer wiggle
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                pointerWiggleAngle = 0.0
+            }
             selectedDish = items[randomIndex]
             
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
@@ -346,7 +380,8 @@ struct LuckyWheelView: View {
     
     // Create Supabase order directly
     private func confirmOrder(for dish: Dish) {
-        guard let member = appState.currentMember else {
+        guard let activeMemberId = appState.activeMemberId,
+              let member = members.first(where: { $0.id == activeMemberId }) else {
             orderStatusMessage = "请先选择您的家庭成员角色！"
             return
         }
@@ -362,33 +397,20 @@ struct LuckyWheelView: View {
             orderDate: Date()
         )
         
-        Task {
-            do {
-                // If this is a mock dish not yet in the cloud database, insert it first
-                if !appState.dishes.contains(where: { $0.id == dish.id }) {
-                    try await SupabaseManager.shared.upsertDish(dish, url: appState.supabaseURL, key: appState.supabaseKey)
-                    await MainActor.run {
-                        appState.dishes.append(dish)
-                        appState.dishes.sort(by: { $0.name < $1.name })
-                    }
-                }
-                
-                try await SupabaseManager.shared.upsertOrder(newOrder, url: appState.supabaseURL, key: appState.supabaseKey)
-                await MainActor.run {
-                    appState.orders.insert(newOrder, at: 0) // Sync locally
-                    isOrdering = false
-                    orderStatusMessage = "点单成功！🎉"
-                    // Dismiss view after 1 second so they can see confirmation
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        dismiss()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    isOrdering = false
-                    orderStatusMessage = "点单失败：\(error.localizedDescription)"
-                }
-            }
+        // If this is a mock dish not yet in the cloud database, insert it first
+        if !allDishes.contains(where: { $0.id == dish.id }) {
+            modelContext.insert(dish)
+            SyncEngine.shared.push(dish, appState: appState)
+        }
+        
+        modelContext.insert(newOrder)
+        SyncEngine.shared.push(newOrder, appState: appState)
+        
+        isOrdering = false
+        orderStatusMessage = "点单成功！🎉"
+        // Dismiss view after 1 second so they can see confirmation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            dismiss()
         }
     }
 }
