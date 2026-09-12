@@ -8,7 +8,19 @@ project.xcworkspace/xcuserdata/
 build/
 Build/
 DerivedData/
-build.log
+*.log
 
-# agents folder
+# agents and scratch folder
 .agents/
+scratch/
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Local screenshots and agent prompt dumps
+docs/screenshots/
+docs/ORIGINAL_REQUEST.md
+
+# Local ops scripts (credentials / one-off patches)
+scripts/

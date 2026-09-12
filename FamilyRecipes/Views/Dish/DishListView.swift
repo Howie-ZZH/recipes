@@ -144,6 +144,9 @@ struct DishListView: View {
             DishDetailView(dish: dish)
                 .environment(appState)
         }
+        .task {
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
+        }
     }
     
     private func deleteDishes(offsets: IndexSet) {
@@ -448,6 +451,7 @@ struct AddDishSheet: View {
                             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                             .filter { !$0.isEmpty }
                         
+                        let compressedImage = ImageUtils.compressImageData(imageData)
                         let newDish = Dish(
                             name: name.isEmpty ? "美味新菜" : name,
                             category: category,
@@ -456,9 +460,10 @@ struct AddDishSheet: View {
                             dishDescription: dishDescription,
                             ingredients: ingredientsList,
                             cookNote: cookNote,
-                            imageData: imageData
+                            imageData: compressedImage
                         )
                         modelContext.insert(newDish)
+                        try? modelContext.save()
                         SyncEngine.shared.push(newDish, appState: appState)
                         dismiss()
                     } label: {

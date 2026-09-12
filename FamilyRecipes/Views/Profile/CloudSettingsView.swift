@@ -66,12 +66,25 @@ struct CloudSettingsView: View {
         updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- 5. 为已有表添加 updated_at 列（如果缺失）
+    -- 5. 为已有表添加 updated_at 与 deleted_at 列（如果缺失）
     ALTER TABLE family_members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE family_members ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE dishes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE dishes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE meal_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE meal_orders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE food_diaries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE food_diaries ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     """
+    
+    var lastSyncText: String {
+        guard let date = appState.lastSyncTimestamp else {
+            return "尚未同步或已重置（下次将执行全量同步）"
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return "\(formatter.string(from: date)) (增量同步模式)"
+    }
     
     var body: some View {
         NavigationStack {
@@ -87,12 +100,104 @@ struct CloudSettingsView: View {
                                 .fontWeight(.bold)
                         }
                         
-                        Text("当前 App 已连接到您自建的 PostgreSQL + PostgREST 后端服务。所有菜谱、家庭成员及点单信息均直接存储于您的私有数据库中，数据完全自主掌控。")
+                        Text("当前 App 已连接到您自建的 PostgreSQL + PostgREST 后端服务。已开启增量同步 (Delta Sync) 与软删除 (Soft Delete)，节省流量并实现毫秒级自动同步。")
                             .font(.caption)
                             .foregroundColor(Color(.secondaryLabel))
                             .lineSpacing(4)
                     }
                     .padding(.vertical, 4)
+                }
+                
+                Section("网络与协同通道") {
+                    HStack {
+                        Label("网络状态", systemImage: "network")
+                            .font(.subheadline)
+                        Spacer()
+                        if NetworkMonitor.shared.isConnected {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.green).frame(width: 8, height: 8)
+                                Text(NetworkMonitor.shared.isCellular ? "蜂窝数据在线" : "WiFi 已连通")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.red).frame(width: 8, height: 8)
+                                Text("离线模式")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                    
+                    HStack {
+                        Label("协同协议", systemImage: "bolt.horizontal.fill")
+                            .font(.subheadline)
+                        Spacer()
+                        if RealtimeManager.shared.isConnected {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bolt.fill").foregroundColor(.orange).font(.caption2)
+                                Text("WebSocket 实时协同在线")
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.blue).font(.caption2)
+                                Text("智能自适应心跳轮询")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.secondaryLabel))
+                            }
+                        }
+                    }
+                    
+                    if SyncOutbox.shared.pendingCount > 0 {
+                        HStack {
+                            Label("离线待发队列", systemImage: "tray.and.arrow.up.fill")
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(SyncOutbox.shared.pendingCount) 条未投递操作")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                        
+                        Button {
+                            Task {
+                                _ = await SyncOutbox.shared.flush(url: appState.supabaseURL, key: appState.supabaseKey)
+                                appState.pendingOutboxCount = SyncOutbox.shared.pendingCount
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "paperplane.fill")
+                                Text("立即重新投递离线发件箱")
+                            }
+                            .foregroundColor(Color(hex: "#FF5E36"))
+                            .font(.subheadline)
+                        }
+                    }
+                }
+                
+                Section("同步状态与游标") {
+                    HStack {
+                        Text("最后同步时间")
+                            .font(.subheadline)
+                        Spacer()
+                        Text(lastSyncText)
+                            .font(.caption)
+                            .foregroundColor(Color(.secondaryLabel))
+                    }
+                    
+                    Button {
+                        forceFullSync()
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("重置游标并执行强制全量同步")
+                        }
+                        .foregroundColor(Color(hex: "#FF5E36"))
+                        .font(.subheadline)
+                    }
+                    .disabled(isTesting)
                 }
                 
                 Section(header: Text("PostgREST 服务器配置"), footer: Text("默认已为您填入自建服务器地址。如需修改，请在上方贴入新的服务器 URL。API Key 可留空（取决于您的 PostgREST 配置）。")) {
@@ -116,7 +221,7 @@ struct CloudSettingsView: View {
                                 ProgressView()
                                     .padding(.trailing, 8)
                             }
-                            Text(isTesting ? "正在连通云端并同步数据..." : "测试连接并拉取数据")
+                            Text(isTesting ? "正在连通云端并同步..." : "测试连接并立即同步")
                                 .fontWeight(.bold)
                         }
                         .foregroundColor(Color(hex: "#FF5E36"))
@@ -193,13 +298,37 @@ struct CloudSettingsView: View {
                 
                 await MainActor.run {
                     testSuccess = true
-                    testStatus = "✅ 连接成功！已和云端数据库实时同步。"
+                    testStatus = "✅ 同步成功！已与云端数据库完成增量双向同步。"
                     isTesting = false
                 }
             } catch {
                 await MainActor.run {
                     testSuccess = false
                     testStatus = "❌ 连接失败: \(error.localizedDescription)\n请确保您的 PostgREST 服务正在运行，且已执行了建表 SQL 脚本！"
+                    isTesting = false
+                }
+            }
+        }
+    }
+    
+    private func forceFullSync() {
+        isTesting = true
+        testStatus = ""
+        appState.resetSyncCursor()
+        
+        Task {
+            do {
+                _ = try await SupabaseManager.shared.fetchMembers(url: url, key: key)
+                await SyncEngine.shared.syncDown(context: modelContext, appState: appState, forceFullSync: true)
+                await MainActor.run {
+                    testSuccess = true
+                    testStatus = "✅ 全量同步成功！已重新拉取云端完整数据快照并重置同步游标。"
+                    isTesting = false
+                }
+            } catch {
+                await MainActor.run {
+                    testSuccess = false
+                    testStatus = "❌ 全量同步失败: \(error.localizedDescription)"
                     isTesting = false
                 }
             }

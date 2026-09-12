@@ -25,6 +25,13 @@ struct CookDashboardView: View {
         todayOrders.filter { $0.isFulfilled }
     }
     
+    // Active past orders (unfulfilled orders before today)
+    var pastPendingOrders: [MealOrder] {
+        let calendar = Calendar.current
+        return allOrders.filter { !calendar.isDateInToday($0.orderDate) && !$0.isFulfilled }
+            .sorted { $0.orderDate > $1.orderDate }
+    }
+    
     // Group active orders by dish
     var groupedActiveOrders: [DishGroupedOrder] {
         var groups: [UUID: DishGroupedOrder] = [:]
@@ -110,7 +117,7 @@ struct CookDashboardView: View {
             
             if dashboardMode == 0 {
                 // TODAY'S DISH PREPARATION WORKSPACE
-                if groupedActiveOrders.isEmpty && groupedCompletedOrders.isEmpty {
+                if groupedActiveOrders.isEmpty && groupedCompletedOrders.isEmpty && pastPendingOrders.isEmpty {
                     VStack(spacing: 24) {
                         Spacer()
                         Text("🧑‍🍳")
@@ -136,8 +143,18 @@ struct CookDashboardView: View {
                                 ForEach(groupedActiveOrders) { group in
                                     VStack(alignment: .leading, spacing: 14) {
                                         HStack {
-                                            Text(group.dish.emoji)
-                                                .font(.title2)
+                                            if let data = group.dish.imageData, let uiImage = UIImage(data: data) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 38, height: 38)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                            } else {
+                                                Text(group.dish.emoji)
+                                                    .font(.title2)
+                                                    .frame(width: 38, height: 38)
+                                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemFill)))
+                                            }
                                             
                                             VStack(alignment: .leading, spacing: 2) {
                                                 HStack(spacing: 8) {
@@ -226,7 +243,97 @@ struct CookDashboardView: View {
                             }
                         }
                         
-                        // 2. Completed Section
+                        // 2. Past Pending Section (if any)
+                        if !pastPendingOrders.isEmpty {
+                            Section(header: HStack {
+                                Text("⚠️ 往期未完成点餐 (\(pastPendingOrders.count))")
+                                    .font(.system(.footnote, design: .rounded))
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.orange)
+                                
+                                Spacer()
+                                
+                                Button("全部补做完成") {
+                                    completeAllPastOrders()
+                                }
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(Color(hex: "#FF5E36"))
+                            }
+                            .padding(.top, 14)
+                            .padding(.bottom, 4)
+                            ) {
+                                ForEach(pastPendingOrders) { order in
+                                    HStack(spacing: 12) {
+                                        if let data = order.dish?.imageData, let uiImage = UIImage(data: data) {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 38, height: 38)
+                                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        } else {
+                                            Text(order.dish?.emoji ?? "🍲")
+                                                .font(.title2)
+                                                .frame(width: 38, height: 38)
+                                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.12)))
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack(spacing: 6) {
+                                                Text(order.dish?.name ?? "未知菜品")
+                                                    .font(.system(.subheadline, design: .rounded))
+                                                    .fontWeight(.bold)
+                                                
+                                                Text(formattedOrderDate(order.orderDate))
+                                                    .font(.system(size: 10, weight: .semibold))
+                                                    .foregroundColor(.secondary)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                            }
+                                            
+                                            HStack(spacing: 4) {
+                                                Text(order.member?.emoji ?? "👤")
+                                                    .font(.caption2)
+                                                Text(order.member?.name ?? "未知成员")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                                
+                                                if !order.note.isEmpty {
+                                                    Text("💬 \"\(order.note)\"")
+                                                        .font(.caption2)
+                                                        .foregroundColor(Color(hex: "#FF5E36"))
+                                                        .italic()
+                                                }
+                                            }
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Button {
+                                            completeSingleOrder(order: order)
+                                        } label: {
+                                            Text("补做完成")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(Color.green)
+                                                .cornerRadius(10)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(14)
+                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .cornerRadius(16)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                                    .padding(.vertical, 3)
+                                }
+                            }
+                        }
+                        
+                        // 3. Completed Section
                         if !groupedCompletedOrders.isEmpty {
                             Section(header: Text("✅ 今日已制作 (\(completedOrders.count))")
                                 .font(.system(.footnote, design: .rounded))
@@ -238,9 +345,20 @@ struct CookDashboardView: View {
                                 ForEach(groupedCompletedOrders) { group in
                                     VStack(alignment: .leading, spacing: 14) {
                                         HStack {
-                                            Text(group.dish.emoji)
-                                                .font(.title2)
-                                                .opacity(0.6)
+                                            if let data = group.dish.imageData, let uiImage = UIImage(data: data) {
+                                                Image(uiImage: uiImage)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 38, height: 38)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                                    .opacity(0.6)
+                                            } else {
+                                                Text(group.dish.emoji)
+                                                    .font(.title2)
+                                                    .frame(width: 38, height: 38)
+                                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemFill)))
+                                                    .opacity(0.6)
+                                            }
                                             
                                             VStack(alignment: .leading, spacing: 2) {
                                                 HStack(spacing: 8) {
@@ -417,11 +535,16 @@ struct CookDashboardView: View {
                             .padding(.bottom, 20)
                         }
                     }
-                    .background(Color(.systemGroupedBackground))
                 }
             }
         }
         .background(Color(.systemGroupedBackground))
+        .refreshable {
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
+        }
+        .task {
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState, isSilent: true)
+        }
     }
     
     // Complete entire dish group
@@ -454,6 +577,21 @@ struct CookDashboardView: View {
         order.isFulfilled = false
         order.updatedAt = Date()
         SyncEngine.shared.push(order, appState: appState)
+    }
+    
+    // Complete all past pending orders
+    private func completeAllPastOrders() {
+        for order in pastPendingOrders {
+            order.isFulfilled = true
+            order.updatedAt = Date()
+            SyncEngine.shared.push(order, appState: appState)
+        }
+    }
+    
+    private func formattedOrderDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        return formatter.string(from: date)
     }
 }
 

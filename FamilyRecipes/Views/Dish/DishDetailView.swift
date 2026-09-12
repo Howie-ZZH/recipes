@@ -489,6 +489,7 @@ struct EditDishSheet: View {
                             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                             .filter { !$0.isEmpty }
                         
+                        dish.imageData = ImageUtils.compressImageData(dish.imageData)
                         dish.updatedAt = Date()
                         SyncEngine.shared.push(dish, appState: appState)
                         dismiss()

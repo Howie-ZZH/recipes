@@ -9,6 +9,7 @@ targets:
     info:
       path: "FamilyRecipes/Info.plist"
       properties:
+        UILaunchScreen: {}
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
     sources:
@@ -35,6 +36,11 @@ targets:
       - FamilyRecipes/Models/SupabaseManager.swift
       - FamilyRecipes/Models/AppState.swift
       - FamilyRecipes/Models/AIEngine.swift
+      - FamilyRecipes/Models/SampleData.swift
+      - FamilyRecipes/Models/ImageUtils.swift
+      - FamilyRecipes/Models/NetworkMonitor.swift
+      - FamilyRecipes/Models/SyncOutbox.swift
+      - FamilyRecipes/Models/RealtimeManager.swift
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true

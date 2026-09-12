@@ -355,6 +355,9 @@ struct OrderView: View {
         .refreshable {
             await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
         }
+        .task {
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
+        }
     }
 }
 

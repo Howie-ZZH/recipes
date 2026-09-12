@@ -1,6 +1,14 @@
 import SwiftUI
 import SwiftData
 
+struct WheelSliceItem: Identifiable {
+    let id = UUID()
+    let dish: Dish
+    let image: UIImage?
+    let name: String
+    let emoji: String
+}
+
 struct LuckyWheelView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
@@ -16,7 +24,13 @@ struct LuckyWheelView: View {
     @State private var showResultModal = false
     @State private var isOrdering = false
     @State private var orderStatusMessage = ""
-    @State private var pointerWiggleAngle: Double = 0.0
+    @State private var pointerWiggle = false
+    @State private var cachedSlices: [WheelSliceItem] = []
+    
+    // Haptic feedback generators pre-instantiated
+    private let impactLight = UIImpactFeedbackGenerator(style: .light)
+    private let impactMedium = UIImpactFeedbackGenerator(style: .medium)
+    private let notificationFeedback = UINotificationFeedbackGenerator()
     
     // Colors for sectors
     let sectorColors: [Color] = [
@@ -30,34 +44,27 @@ struct LuckyWheelView: View {
         Color(hex: "#8BC34A")  // Light Green
     ]
     
-    // Dynamically prepared items for the wheel (at least 6, max 8)
-    var wheelItems: [Dish] {
+    // Dynamically prepared items for the wheel (real dishes directly from database)
+    private func updateCachedSlices() {
         let savedDishes = allDishes
-        if savedDishes.count >= 3 {
-            let favorites = savedDishes.filter { $0.isFavorite }
-            if favorites.count >= 3 {
-                return Array(favorites.prefix(8))
+        var rawDishes: [Dish] = []
+        if !savedDishes.isEmpty {
+            if savedDishes.count >= 4 {
+                rawDishes = Array(savedDishes.prefix(12))
             } else {
-                return Array(savedDishes.prefix(8))
+                while rawDishes.count < 6 {
+                    rawDishes.append(contentsOf: savedDishes)
+                }
+                rawDishes = Array(rawDishes.prefix(6))
             }
         } else {
-            // Mock items to pad
-            var items = savedDishes
-            let mocks = [
-                Dish(name: "红烧肉", category: "荤菜", tags: ["经典"], emoji: "🥩", dishDescription: "香气扑鼻，入口即化", ingredients: [], cookNote: ""),
-                Dish(name: "清蒸鲈鱼", category: "荤菜", tags: ["清淡"], emoji: "🐟", dishDescription: "鲜嫩滑溜，原汁原味", ingredients: [], cookNote: ""),
-                Dish(name: "番茄炒蛋", category: "素菜", tags: ["快手"], emoji: "🍅", dishDescription: "酸甜爽口，拌饭神器", ingredients: [], cookNote: ""),
-                Dish(name: "清炒时蔬", category: "素菜", tags: ["健康"], emoji: "🥬", dishDescription: "爽脆清凉，少油健康", ingredients: [], cookNote: ""),
-                Dish(name: "麻婆豆腐", category: "素菜", tags: ["川味"], emoji: "🌶️", dishDescription: "麻辣鲜香，十分下饭", ingredients: [], cookNote: ""),
-                Dish(name: "酸辣土豆丝", category: "素菜", tags: ["经典"], emoji: "🥔", dishDescription: "酸辣爽脆，百吃不厌", ingredients: [], cookNote: "")
-            ]
-            for mock in mocks {
-                if items.count >= 6 { break }
-                if !items.contains(where: { $0.name == mock.name }) {
-                    items.append(mock)
-                }
-            }
-            return items
+            rawDishes = SampleData.mockDishes
+        }
+        
+        // Pre-decode all UIImages in memory once to prevent frame-rate drops during rotation
+        cachedSlices = rawDishes.map { dish in
+            let img: UIImage? = dish.imageData.flatMap { UIImage(data: $0) }
+            return WheelSliceItem(dish: dish, image: img, name: dish.name, emoji: dish.emoji)
         }
     }
     
@@ -68,11 +75,26 @@ struct LuckyWheelView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 24) {
-                // Header handles
-                Capsule()
-                    .fill(Color(.systemGray4))
-                    .frame(width: 36, height: 5)
-                    .padding(.top, 12)
+                // Header handles & Top Right Exit Button
+                ZStack {
+                    Capsule()
+                        .fill(Color(.systemGray4))
+                        .frame(width: 36, height: 5)
+                        .padding(.top, 12)
+                    
+                    HStack {
+                        Spacer()
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 26))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.top, 12)
+                    }
+                }
                 
                 // Header Titles
                 VStack(spacing: 6) {
@@ -111,26 +133,37 @@ struct LuckyWheelView: View {
                         .frame(width: 304, height: 304)
                         .shadow(color: Color(hex: "#FF5E36").opacity(0.15), radius: 12, x: 0, y: 6)
                     
-                    // The Rotating Wheel
+                    // The Rotating Wheel (GPU Accelerated & Cached Textures)
                     ZStack {
-                        let items = wheelItems
-                        let itemCount = items.count
+                        let items = cachedSlices
+                        let itemCount = max(items.count, 1)
                         let sectorSize = 360.0 / Double(itemCount)
                         
                         // Draw Sectors
-                        ForEach(0..<itemCount, id: \.self) { i in
+                        ForEach(0..<items.count, id: \.self) { i in
+                            let item = items[i]
                             let startAngle = Double(i) * sectorSize
                             SectorShape(startAngle: .degrees(startAngle), endAngle: .degrees(startAngle + sectorSize))
                                 .fill(sectorColors[i % sectorColors.count])
                             
-                            // Sector text and emoji positioned radially
+                            // Sector text and pre-decoded image/emoji positioned radially
                             let midAngle = startAngle + sectorSize / 2.0
                             HStack {
                                 Spacer()
                                 VStack(spacing: 4) {
-                                    Text(items[i].emoji)
-                                        .font(.system(size: 24))
-                                    Text(items[i].name)
+                                    if let uiImage = item.image {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 26, height: 26)
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+                                    } else {
+                                        Text(item.emoji.isEmpty ? "🍲" : item.emoji)
+                                            .font(.system(size: 24))
+                                    }
+                                    
+                                    Text(item.name)
                                         .font(.system(size: 11, weight: .black, design: .rounded))
                                         .foregroundColor(.white)
                                         .lineLimit(1)
@@ -168,12 +201,13 @@ struct LuckyWheelView: View {
                 }
                 .frame(width: 320, height: 320)
                 .overlay(
-                    // Top Pointer pointing downwards into the wheel
+                    // Top Pointer pointing downwards into the wheel with smooth continuous animation
                     Image(systemName: "triangle.fill")
                         .font(.title2)
                         .foregroundColor(Color(hex: "#FF5E36"))
                         .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
-                        .rotationEffect(.degrees(180 + pointerWiggleAngle))
+                        .rotationEffect(.degrees(180 + (pointerWiggle ? -10 : 10)))
+                        .animation(pointerWiggle ? .easeInOut(duration: 0.09).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: pointerWiggle)
                         .offset(y: -154),
                     alignment: .center
                 )
@@ -193,7 +227,7 @@ struct LuckyWheelView: View {
             
             // Premium Overlay Result Card
             if showResultModal, let dish = selectedDish {
-                Color.black.opacity(0.3)
+                Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .transition(.opacity)
                     .onTapGesture {
@@ -210,9 +244,30 @@ struct LuckyWheelView: View {
                         .padding(.top, 10)
                     
                     VStack(spacing: 12) {
-                        Text(dish.emoji)
-                            .font(.system(size: 64))
-                            .bounceAnimation()
+                        // Real Dish Image or Emoji Fallback
+                        Group {
+                            if let data = dish.imageData, let uiImage = UIImage(data: data) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                Text(dish.emoji.isEmpty ? "🍲" : dish.emoji)
+                                    .font(.system(size: 56))
+                            }
+                        }
+                        .frame(width: 90, height: 90)
+                        .background(
+                            Circle()
+                                .fill(LinearGradient(
+                                    colors: [Color(hex: "#FFF4E8"), Color(hex: "#FFEBE7")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                        )
+                        .clipped()
+                        .cornerRadius(45)
+                        .shadow(color: Color(hex: "#FF5E36").opacity(0.2), radius: 8, x: 0, y: 4)
+                        .bounceAnimation()
                         
                         Text(dish.name)
                             .font(.system(.title2, design: .rounded))
@@ -289,6 +344,16 @@ struct LuckyWheelView: View {
                         }
                         .buttonStyle(ScaledButtonStyle())
                         .disabled(isOrdering)
+                        
+                        Button {
+                            showResultModal = false
+                            dismiss()
+                        } label: {
+                            Text("退出转盘")
+                                .font(.subheadline)
+                                .foregroundColor(Color(.secondaryLabel))
+                                .padding(.top, 2)
+                        }
                     }
                     .padding(.horizontal, 16)
                 }
@@ -302,6 +367,19 @@ struct LuckyWheelView: View {
                                 .stroke(Color.white.opacity(0.5), lineWidth: 1)
                         )
                 )
+                .overlay(
+                    Button {
+                        withAnimation(.spring()) {
+                            showResultModal = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(Color(.tertiaryLabel))
+                            .padding(14)
+                    },
+                    alignment: .topTrailing
+                )
                 .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 10)
                 .transition(.scale.combined(with: .opacity))
             }
@@ -309,72 +387,74 @@ struct LuckyWheelView: View {
         .onShake {
             spin()
         }
+        .onAppear {
+            updateCachedSlices()
+            impactLight.prepare()
+            impactMedium.prepare()
+        }
+        .onChange(of: allDishes) { _, _ in
+            updateCachedSlices()
+        }
+        .task {
+            await SyncEngine.shared.syncDown(context: modelContext, appState: appState)
+            updateCachedSlices()
+        }
     }
     
-    // Core spin logic
+    // Core spin logic (Ultra-smooth 60/120fps animation)
     private func spin() {
-        guard !isSpinning && !showResultModal else { return }
+        if cachedSlices.isEmpty {
+            updateCachedSlices()
+        }
+        guard !isSpinning && !showResultModal && !cachedSlices.isEmpty else { return }
         isSpinning = true
         orderStatusMessage = ""
+        pointerWiggle = true
         
-        // Pointer wiggle animation setup
-        withAnimation(.linear(duration: 0.12).repeatForever(autoreverses: true)) {
-            pointerWiggleAngle = -10.0
-        }
+        // Initial tactile impulse
+        impactMedium.impactOccurred()
         
-        // Dynamic decelerating haptic ticks
-        let totalTicks = 35
-        for i in 0..<totalTicks {
-            let progress = Double(i) / Double(totalTicks)
-            let delay = pow(progress, 2.0) * 4.0
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        // Decelerating tactile feedback (lightweight, background-timed)
+        let tickCount = 18
+        for i in 0..<tickCount {
+            let progress = Double(i) / Double(tickCount)
+            let delay = pow(progress, 2.2) * 3.8
+            DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + delay) {
                 if self.isSpinning {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    // Tweak pointer wiggle direction on each tick to synchronize with the wheel items passing
-                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
-                        pointerWiggleAngle = (i % 2 == 0) ? 8.0 : -8.0
+                    DispatchQueue.main.async {
+                        self.impactLight.impactOccurred()
                     }
                 }
             }
         }
         
-        // Haptic feedback initial burst
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
-        let items = wheelItems
+        let items = cachedSlices
         let itemCount = items.count
         let randomIndex = Int.random(in: 0..<itemCount)
         let sectorSize = 360.0 / Double(itemCount)
         
-        // We want the random item to land on the 12 o'clock pointer (270 degrees)
-        // rotationAngle needs to rotate such that target index is at 270 degrees.
-        // angle = 270 - (mid angle of sector index)
+        // Calculate exact landing angle for target item at 12 o'clock pointer (270 deg)
         let targetOffset = 270.0 - (Double(randomIndex) * sectorSize + sectorSize / 2.0)
-        
-        // 5 complete rotations
         let extraSpins = 360.0 * 5.0
         let currentNormalized = rotationAngle.truncatingRemainder(dividingBy: 360.0)
         let newAngle = rotationAngle - currentNormalized + extraSpins + targetOffset
         
-        withAnimation(.spring(response: 4.0, dampingFraction: 0.85, blendDuration: 0)) {
+        // Pure single SwiftUI Spring animation for the entire rotation
+        withAnimation(.spring(response: 3.8, dampingFraction: 0.82, blendDuration: 0)) {
             rotationAngle = newAngle
         }
         
-        // Wait for animation to finish
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+        // Spin completion handler
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.85) {
             isSpinning = false
-            // Reset pointer wiggle
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                pointerWiggleAngle = 0.0
-            }
-            selectedDish = items[randomIndex]
+            pointerWiggle = false
+            selectedDish = items[randomIndex].dish
             
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 showResultModal = true
             }
             
-            // Soft haptic tick
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            notificationFeedback.notificationOccurred(.success)
         }
     }
     

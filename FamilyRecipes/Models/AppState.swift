@@ -22,6 +22,20 @@ final class AppState {
     // UI Feedback States
     var isSyncing: Bool = false
     var networkError: String = ""
+    var pollingInterval: TimeInterval = 15
+    var isRealtimeConnected: Bool = false
+    var pendingOutboxCount: Int = 0
+    
+    // Sync Cursor for Delta Sync
+    var lastSyncTimestamp: Date? {
+        didSet {
+            if let date = lastSyncTimestamp {
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: "lastSyncTimestamp")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastSyncTimestamp")
+            }
+        }
+    }
     
     init() {
         let savedURL = UserDefaults.standard.string(forKey: "supabaseUrl") ?? "http://47.79.236.127:3000"
@@ -32,6 +46,15 @@ final class AppState {
         if !savedId.isEmpty {
             self.activeMemberId = UUID(uuidString: savedId)
         }
+        
+        let savedTimestamp = UserDefaults.standard.double(forKey: "lastSyncTimestamp")
+        if savedTimestamp > 0 {
+            self.lastSyncTimestamp = Date(timeIntervalSince1970: savedTimestamp)
+        }
+    }
+    
+    func resetSyncCursor() {
+        self.lastSyncTimestamp = nil
     }
     
     // MARK: - Cloud Configurations
